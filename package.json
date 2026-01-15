@@ -1,0 +1,38 @@
+{
+  "name": "curso_online",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "init-db": "node init-db.js",
+    "db:migrate": "node utils/migrate.js",
+    "db:check": "node check-db.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.90.1",
+    "axios": "^1.13.2",
+    "bcryptjs": "^2.4.3",
+    "bootstrap": "^5.3.3",
+    "cloudinary": "^2.8.0",
+    "cors": "^2.8.5",
+    "formidable": "^3.5.4",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "next": "16.1.1",
+    "pg": "^8.16.3",
+    "react": "19.2.3",
+    "react-bootstrap": "^2.10.2",
+    "react-dom": "19.2.3",
+    "react-icons": "^5.2.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.9.1",
+    "eslint-config-next": "16.1.1"
+  }
+}

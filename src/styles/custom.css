@@ -1,0 +1,53 @@
+/* Estilos personalizados */
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.shadow-hover:hover {
+  box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important;
+}
+
+/* Loading */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255,255,255,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+/* Sidebar */
+.sidebar {
+  background-color: white;
+  min-height: calc(100vh - 56px);
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Progresso */
+.progress-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: conic-gradient(var(--primary-color) 0% 75%, #e0e0e0 75% 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.progress-circle-inner {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background-color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
