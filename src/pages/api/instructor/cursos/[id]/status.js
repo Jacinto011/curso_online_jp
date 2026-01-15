@@ -5,7 +5,7 @@ import { authenticate } from '../../../../../lib/auth';
 async function handler(req, res) {
   // Autenticação
   const user = await authenticate(req);
-  if (!user || user.role !== 'admin') {
+  if (!user || user.role !== 'instructor') {
     return res.status(401).json({ message: 'Não autorizado' });
   }
 
