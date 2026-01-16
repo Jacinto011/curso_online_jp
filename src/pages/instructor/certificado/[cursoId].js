@@ -1,47 +1,46 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '@/components/common/Layout';
+import { useAuth } from '@/context/AuthContext';
+import api from '../../../lib/api';
 
 export default function CertificadoPage() {
   const router = useRouter();
   const { cursoId } = router.query;
-  
+  const codigo = router.query.cursoId;
+  const { user, isStudent, isInstructor } = useAuth();
   const [certificado, setCertificado] = useState(null);
   const [loading, setLoading] = useState(true);
   const [gerandoPDF, setGerandoPDF] = useState(false);
-
+  const [error, setError] = useState(null);
+  //console.log(router.query);
+  
   useEffect(() => {
     if (cursoId) {
-      carregarCertificado();
+      
+       verificarCertificado(codigo);
     }
   }, [cursoId]);
 
-  const carregarCertificado = async () => {
+    const verificarCertificado = async (codigo) => {
     try {
       setLoading(true);
       
-      const token = localStorage.getItem('token');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
+      // Verifica qual endpoint usar baseado no tipo de usuário
+      const endpoint = isStudent 
+        ? `/student/certificado/verificar/${codigo}`
+        : `/instructor/certificado/verificar/${codigo}`;
       
-      const response = await fetch(`/api/certificado/${cursoId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await api.get(endpoint);
+      //console.log(response.data.data);
       
-      const data = await response.json();
-      
-      if (response.ok) {
-        setCertificado(data);
+      if (response.data.success) {
+        setCertificado(response.data.data);
       } else {
-        alert(data.message || 'Erro ao carregar certificado');
-        router.push('/cursos/meus-cursos');
+        setError(response.data.message || 'Certificado não encontrado');
       }
-    } catch (error) {
-      console.error('Erro ao carregar certificado:', error);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Erro ao carregar certificado');
     } finally {
       setLoading(false);
     }
@@ -103,9 +102,9 @@ export default function CertificadoPage() {
             <p className="text-muted">Este certificado não está disponível ou não existe.</p>
             <button 
               className="btn btn-primary"
-              onClick={() => router.push('/cursos/meus-cursos')}
+              onClick={() => router.push('/instructor/certificados')}
             >
-              Voltar para Meus Cursos
+              Voltar para Certificados
             </button>
           </div>
         </div>
@@ -217,10 +216,10 @@ export default function CertificadoPage() {
                     <div className="d-grid">
                       <button 
                         className="btn btn-outline-secondary"
-                        onClick={() => router.push('/cursos/meus-cursos')}
+                        onClick={() => router.push('/instructor/certificados')}
                       >
                         <i className="bi bi-arrow-left me-2"></i>
-                        Voltar para Meus Cursos
+                        Voltar para Certificados
                       </button>
                     </div>
                   </div>

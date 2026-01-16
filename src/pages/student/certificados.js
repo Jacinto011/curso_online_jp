@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/router';
 import api from '../../lib/api';
+import Link from 'next/link';
 
 export default function CertificadosEstudante() {
   const { isStudent } = useAuth();
@@ -51,7 +52,7 @@ export default function CertificadosEstudante() {
       <div className="row">
         <div className="col-12">
           <h1 className="mb-4">Meus Certificados</h1>
-          
+
           {certificados.length === 0 ? (
             <div className="card">
               <div className="card-body text-center py-5">
@@ -74,13 +75,13 @@ export default function CertificadosEstudante() {
                       <i className="bi bi-award text-success" style={{ fontSize: '4rem' }}></i>
                       <h4 className="mt-3">{cert.curso_titulo}</h4>
                       <p className="text-muted">Concluído com sucesso</p>
-                      
+
                       <div className="text-start">
                         <p><strong>Instrutor:</strong> {cert.instrutor_nome}</p>
                         <p><strong>Data de Conclusão:</strong> {new Date(cert.data_conclusao).toLocaleDateString('pt-BR')}</p>
                         <p><strong>Data de Emissão:</strong> {new Date(cert.data_emissao).toLocaleDateString('pt-BR')}</p>
                         <p>
-                          <strong>Código de Verificação:</strong> 
+                          <strong>Código de Verificação:</strong>
                           <br />
                           <code className="bg-light p-2 rounded d-block mt-1">{cert.codigo_verificacao}</code>
                         </p>
@@ -88,15 +89,15 @@ export default function CertificadosEstudante() {
                     </div>
                     <div className="card-footer bg-transparent">
                       <div className="d-grid gap-2">
-                        <button 
-                          className="btn btn-outline-success"
-                          onClick={() => handleVerificar(cert.codigo_verificacao)}
+                        <Link
+                          href={`/student/certificado/${cert.codigo_verificacao}`}
+                          className="btn btn-success"
                         >
-                          <i className="bi bi-clipboard me-2"></i>
-                          Copiar Código
-                        </button>
+                          <i className="bi bi-eye me-2"></i>
+                          Ver Certificado
+                        </Link>
                         {cert.url_pdf && (
-                          <a 
+                          <a
                             href={cert.url_pdf}
                             className="btn btn-success"
                             target="_blank"

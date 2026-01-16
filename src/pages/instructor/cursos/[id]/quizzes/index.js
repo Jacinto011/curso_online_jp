@@ -1,13 +1,15 @@
+// src/pages/instructor/cursos/[cursoId]/quizzes/index.js
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../../../context/AuthContext';
+import { useAuth } from '../../../../../context/AuthContext';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import api from '../../../../lib/api';
+import api from '../../../../../lib/api';
 
 export default function QuizzesInstrutor() {
   const { isInstructor } = useAuth();
   const router = useRouter();
-  const { cursoId } = router.query;
+  const { id } = router.query;
+ // console.log();
   
   const [curso, setCurso] = useState(null);
   const [modulos, setModulos] = useState([]);
@@ -23,29 +25,29 @@ export default function QuizzesInstrutor() {
   });
 
   useEffect(() => {
-    if (!isInstructor || !cursoId) {
+    if (!isInstructor || !id) {
       router.push('/auth/login');
       return;
     }
     fetchDados();
-  }, [isInstructor, cursoId]);
+  }, [isInstructor, id]);
 
   const fetchDados = async () => {
     try {
       setLoading(true);
       const [cursoRes, modulosRes, quizzesRes] = await Promise.all([
-        api.get(`/api/instructor/cursos/${cursoId}`),
-        api.get(`/api/instructor/modulos?curso_id=${cursoId}`),
-        api.get(`/api/instructor/quizzes?curso_id=${cursoId}`)
+        api.get(`/instructor/cursos/${id}`),
+        api.get(`/instructor/modulos?curso_id=${id}`),
+        api.get(`/instructor/quizzes?curso_id=${id}`)
       ]);
       
-      setCurso(cursoRes.data);
-      setModulos(modulosRes.data);
-      setQuizzes(quizzesRes.data);
+      setCurso(cursoRes.data?.data || cursoRes.data);
+      setModulos(modulosRes.data?.data || modulosRes.data);
+      setQuizzes(quizzesRes.data?.data || quizzesRes.data);
       
       // Selecionar primeiro módulo sem quiz
-      const primeiroModuloSemQuiz = modulosRes.data.find(modulo => 
-        !quizzesRes.data.some(quiz => quiz.modulo_id === modulo.id)
+      const primeiroModuloSemQuiz = (modulosRes.data?.data || modulosRes.data).find(modulo => 
+        !(quizzesRes.data?.data || quizzesRes.data).some(quiz => quiz.modulo_id === modulo.id)
       );
       
       if (primeiroModuloSemQuiz) {
@@ -137,7 +139,7 @@ export default function QuizzesInstrutor() {
               </p>
             </div>
             <div>
-              <Link href={`/instructor/cursos/${cursoId}`} className="btn btn-outline-primary me-2">
+              <Link href={`/instructor/cursos/${id}`} className="btn btn-outline-primary me-2">
                 <i className="bi bi-arrow-left me-2"></i>
                 Voltar ao Curso
               </Link>
@@ -313,6 +315,7 @@ export default function QuizzesInstrutor() {
                         <th>Título</th>
                         <th>Pontuação Mínima</th>
                         <th>Tempo Limite</th>
+                        <th>Perguntas</th>
                         <th>Status</th>
                         <th>Ações</th>
                       </tr>
@@ -320,6 +323,10 @@ export default function QuizzesInstrutor() {
                     <tbody>
                       {quizzes.map(quiz => {
                         const modulo = modulos.find(m => m.id === quiz.modulo_id);
+                        const quizId = quiz.id;
+                        const cursoId = router.query.id;
+                        
+                        
                         
                         return (
                           <tr key={quiz.id}>
@@ -343,12 +350,17 @@ export default function QuizzesInstrutor() {
                               )}
                             </td>
                             <td>
+                              <span className={`badge ${quiz.total_perguntas > 0 ? 'bg-success' : 'bg-warning'}`}>
+                                {quiz.total_perguntas} pergunta{quiz.total_perguntas !== 1 ? 's' : ''}
+                              </span>
+                            </td>
+                            <td>
                               <span className="badge bg-success">Ativo</span>
                             </td>
                             <td>
                               <div className="btn-group btn-group-sm">
                                 <Link
-                                  href={`/instructor/quizzes/${quiz.id}/perguntas`}
+                                  href={`/instructor/cursos/${cursoId}/quizzes/${quizId}/perguntas`}
                                   className="btn btn-outline-primary"
                                   title="Gerenciar perguntas"
                                 >

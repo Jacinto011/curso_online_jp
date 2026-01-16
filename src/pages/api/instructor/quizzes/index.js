@@ -1,10 +1,10 @@
-import withCors from '../../../lib/cors';
-import { query } from '../../../lib/database-postgres';
-import { authenticate } from '../../../lib/auth';
+// src/pages/api/instructor/quizzes/index.js
+import withCors from '../../../../lib/cors';
+import { query } from '../../../../lib/database-postgres';
+import { authenticate } from '../../../../lib/auth';
 
 async function handler(req, res) {
   try {
-    // Autenticação
     const user = await authenticate(req);
     if (!user || user.role !== 'instructor') {
       return res.status(401).json({ 
@@ -40,15 +40,25 @@ async function handler(req, res) {
 
           const result = await query(`
             SELECT 
-              q.*,
+              q.id,
+              q.titulo,
+              q.descricao,
+              q.modulo_id,
+              q.pontuacao_minima,
+              q.tempo_limite,
+              q.data_criacao,
               m.titulo as modulo_titulo,
-              COUNT(DISTINCT p.id) as total_perguntas
+              m.ordem as modulo_ordem,
+              COALESCE(pergunta_counts.total, 0) as total_perguntas
             FROM quizzes q
             JOIN modulos m ON q.modulo_id = m.id
-            LEFT JOIN perguntas p ON q.id = p.quiz_id
+            LEFT JOIN (
+              SELECT quiz_id, COUNT(*) as total
+              FROM perguntas
+              GROUP BY quiz_id
+            ) pergunta_counts ON q.id = pergunta_counts.quiz_id
             WHERE m.curso_id = $1
-            GROUP BY q.id, m.titulo
-            ORDER BY m.ordem ASC, q.titulo ASC
+            ORDER BY m.ordem ASC, q.data_criacao DESC
           `, [curso_id]);
 
           res.status(200).json({
@@ -95,7 +105,7 @@ async function handler(req, res) {
           const quizResult = await query(
             `INSERT INTO quizzes (titulo, descricao, modulo_id, pontuacao_minima, tempo_limite) 
              VALUES ($1, $2, $3, $4, $5)
-             RETURNING *`,
+             RETURNING id, titulo, descricao, modulo_id, pontuacao_minima, tempo_limite, data_criacao`,
             [
               titulo, 
               descricao || null, 

@@ -1,10 +1,10 @@
+// src/pages/api/student/quiz/[quizId]/iniciar.js
 import withCors from '../../../../../lib/cors';
 import { query } from '../../../../../lib/database-postgres';
 import { authenticate } from '../../../../../lib/auth';
 
 async function handler(req, res) {
   try {
-    // Autenticação
     const user = await authenticate(req);
     if (!user) {
       return res.status(401).json({ 
@@ -23,34 +23,58 @@ async function handler(req, res) {
       });
     }
 
-    // Buscar quiz e verificar permissões
+    // Buscar matrícula ativa do estudante no curso deste quiz
+    const matriculaResult = await query(`
+      SELECT m.id as matricula_id, m.curso_id, m.estudante_id
+      FROM matriculas m
+      JOIN quizzes q ON q.id = $1
+      JOIN modulos mod ON q.modulo_id = mod.id
+      WHERE m.estudante_id = $2 
+        AND m.curso_id = mod.curso_id
+        AND m.status IN ('ativa', 'concluida')
+      LIMIT 1
+    `, [quizId, user.id]);
+    
+    if (matriculaResult.rows.length === 0) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Você não está matriculado no curso deste quiz' 
+      });
+    }
+
+    const matricula = matriculaResult.rows[0];
+
+    // Buscar dados do quiz
     const quizResult = await query(`
       SELECT 
         q.*,
-        m.id as modulo_id,
+        m.titulo as modulo_titulo,
         m.ordem as modulo_ordem,
-        m.curso_id,
         c.titulo as curso_titulo,
-        -- Verificar se está matriculado
-        mat.id as matricula_id,
-        -- Verificar se módulo anterior foi concluído
+        c.id as curso_id,
+        -- Verificar se já realizou e foi aprovado
+        EXISTS (
+          SELECT 1 FROM resultados_quiz rq
+          WHERE rq.matricula_id = $1 
+            AND rq.quiz_id = q.id 
+            AND rq.aprovado = true
+        ) as ja_aprovado,
+        -- Verificar se todos os materiais do módulo foram concluídos
         (
-          SELECT p.concluido 
+          SELECT COUNT(*) = (
+            SELECT COUNT(*) FROM materiais WHERE modulo_id = m.id
+          )
           FROM progresso p
-          JOIN modulos ant ON p.modulo_id = ant.id
-          WHERE p.matricula_id = mat.id 
-            AND ant.ordem = m.ordem - 1
-          LIMIT 1
-        ) as modulo_anterior_concluido,
-        -- Verificar se já realizou este quiz
-        r.aprovado as ja_realizado
+          WHERE p.matricula_id = $2 
+            AND p.modulo_id = m.id 
+            AND p.material_id IS NOT NULL 
+            AND p.concluido = true
+        ) as materiais_concluidos
       FROM quizzes q
       JOIN modulos m ON q.modulo_id = m.id
       JOIN cursos c ON m.curso_id = c.id
-      LEFT JOIN matriculas mat ON c.id = mat.curso_id AND mat.estudante_id = $1
-      LEFT JOIN resultados_quiz r ON q.id = r.quiz_id AND r.matricula_id = mat.id
-      WHERE q.id = $2
-    `, [user.id, quizId]);
+      WHERE q.id = $3
+    `, [matricula.matricula_id, matricula.matricula_id, quizId]);
     
     if (quizResult.rows.length === 0) {
       return res.status(404).json({ 
@@ -61,50 +85,52 @@ async function handler(req, res) {
 
     const quiz = quizResult.rows[0];
 
-    if (!quiz.matricula_id) {
-      return res.status(403).json({ 
-        success: false,
-        message: 'Você não está matriculado neste curso' 
-      });
-    }
-
-    if (quiz.modulo_ordem > 1 && !quiz.modulo_anterior_concluido) {
-      return res.status(403).json({ 
-        success: false,
-        message: 'Complete o módulo anterior antes de realizar este quiz' 
-      });
-    }
-
-    if (quiz.ja_realizado) {
+    // Verificar se já foi aprovado
+    if (quiz.ja_aprovado) {
       return res.status(400).json({ 
         success: false,
-        message: 'Você já realizou e foi aprovado neste quiz' 
+        message: 'Você já foi aprovado neste quiz' 
       });
     }
 
-    // Buscar perguntas e opções
+    // Verificar se todos os materiais foram concluídos (opcional, dependendo da regra)
+    // Se quiser forçar a conclusão dos materiais antes do quiz, descomente:
+    // if (!quiz.materiais_concluidos) {
+    //   return res.status(403).json({ 
+    //     success: false,
+    //     message: 'Complete todos os materiais do módulo antes de realizar o quiz' 
+    //   });
+    // }
+
+    // Buscar perguntas (sem as respostas corretas)
     const perguntasResult = await query(`
       SELECT 
-        p.*,
-        json_agg(
-          json_build_object(
-            'id', o.id,
-            'texto', o.texto,
-            'correta', o.correta
-          )
+        p.id,
+        p.enunciado,
+        p.tipo,
+        p.pontos,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', o.id,
+              'texto', o.texto
+            ) ORDER BY o.id
+          ) FILTER (WHERE o.id IS NOT NULL),
+          '[]'::json
         ) as opcoes
       FROM perguntas p
       LEFT JOIN opcoes_resposta o ON p.id = o.pergunta_id
       WHERE p.quiz_id = $1
       GROUP BY p.id
-      ORDER BY p.id ASC
+      ORDER BY p.id
     `, [quizId]);
 
-    // Parse das opções JSON
-    const perguntasFormatadas = perguntasResult.rows.map(p => ({
-      ...p,
-      opcoes: p.opcoes || []
-    }));
+    if (perguntasResult.rows.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Este quiz ainda não possui perguntas' 
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -115,10 +141,14 @@ async function handler(req, res) {
           descricao: quiz.descricao,
           pontuacao_minima: quiz.pontuacao_minima,
           tempo_limite: quiz.tempo_limite,
-          modulo_id: quiz.modulo_id,
-          curso_titulo: quiz.curso_titulo
+          modulo_titulo: quiz.modulo_titulo,
+          modulo_ordem: quiz.modulo_ordem,
+          curso_titulo: quiz.curso_titulo,
+          curso_id: quiz.curso_id,
+          matricula_id: matricula.matricula_id,
+          estudante_id: matricula.estudante_id
         },
-        perguntas: perguntasFormatadas
+        perguntas: perguntasResult.rows
       }
     });
     

@@ -5,7 +5,7 @@ const isBrowser = typeof window !== 'undefined';
 
 const api = axios.create({
   baseURL: isBrowser ? '/api' : process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api',
-  timeout: 10000,
+  timeout: 30000, // ⬅️ MUDE DE 10000 PARA 30000 (30 segundos)
   headers: {
     'Content-Type': 'application/json',
   }
@@ -20,6 +20,14 @@ api.interceptors.request.use(
         config.headers.Authorization = `Bearer ${token}`;
       }
     }
+
+    // ⬇️ ADICIONE ESTE BLOCO PARA ROTA ESPECÍFICA
+    if (config.url?.includes('/student/progresso/registrar')) {
+      config.timeout = 45000; // ⬅️ 45 segundos só para esta rota
+      console.log('⏱️  Timeout ajustado para 45s para esta rota');
+    }
+
+
     return config;
   },
   (error) => {

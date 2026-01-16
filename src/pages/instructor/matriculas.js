@@ -24,7 +24,7 @@ export default function MatriculasInstrutor() {
     try {
       setLoading(true);
       const response = await api.get(`/instructor/matriculas?status=${filtroStatus}`);
-      setMatriculas(response.data);
+      setMatriculas(response.data.data);
     } catch (error) {
       console.error('Erro ao carregar matrículas:', error);
     } finally {

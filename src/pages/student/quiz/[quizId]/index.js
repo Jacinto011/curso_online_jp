@@ -1,3 +1,4 @@
+// pages/student/quiz/[id].js - COM CORREÇÃO DO handleIniciarQuiz
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../context/AuthContext';
 import { useRouter } from 'next/router';
@@ -5,9 +6,10 @@ import Link from 'next/link';
 import api from '../../../../lib/api';
 
 export default function QuizPage() {
-  const { isStudent } = useAuth();
+  const { isStudent, user } = useAuth();
   const router = useRouter();
-  const { id: quizId } = router.query;
+  const { quizId } = router.query;
+  console.log(router.query.quizId);
   
   const [quizData, setQuizData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -16,56 +18,84 @@ export default function QuizPage() {
   const [resultado, setResultado] = useState(null);
   const [tempoRestante, setTempoRestante] = useState(null);
   const [iniciado, setIniciado] = useState(false);
+  const [timerInterval, setTimerInterval] = useState(null);
 
   useEffect(() => {
-    if (!isStudent || !quizId) {
-      router.push('/auth/login');
-      return;
-    }
+    if (!isStudent || !quizId) return;
     fetchQuiz();
   }, [isStudent, quizId]);
 
-  useEffect(() => {
-    let timer;
-    if (iniciado && quizData?.quiz?.tempo_limite && tempoRestante > 0) {
-      timer = setInterval(() => {
+  // Adicionar esta função que estava faltando
+  const handleIniciarQuiz = () => {
+    setIniciado(true);
+    
+    // Iniciar contador de tempo se houver tempo limite
+    if (quizData?.quiz?.tempo_limite) {
+      const limiteSegundos = quizData.quiz.tempo_limite * 60;
+      setTempoRestante(limiteSegundos);
+      
+      // Configurar intervalo do timer
+      const interval = setInterval(() => {
         setTempoRestante(prev => {
           if (prev <= 1) {
-            clearInterval(timer);
-            handleSubmeterQuiz();
+            clearInterval(interval);
+            handleTempoEsgotado();
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
+      
+      setTimerInterval(interval);
     }
-    return () => clearInterval(timer);
-  }, [iniciado, quizData?.quiz?.tempo_limite, tempoRestante]);
+  };
+
+  const handleTempoEsgotado = () => {
+    alert('Tempo esgotado! O quiz será submetido automaticamente.');
+    handleSubmeterQuiz();
+  };
+
+  // Limpar intervalo ao desmontar o componente
+  useEffect(() => {
+    return () => {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
+    };
+  }, [timerInterval]);
 
   const fetchQuiz = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/api/student/quiz/${quizId}/iniciar`);
-      setQuizData(response.data);
+      const response = await api.get(`/student/quiz/${quizId}/iniciar`);
       
-      // Inicializar tempo se houver limite
-      if (response.data.quiz.tempo_limite) {
-        setTempoRestante(response.data.quiz.tempo_limite * 60); // Converter minutos para segundos
+      if (response.data.success) {
+        setQuizData(response.data.data);
+        
+        // Inicializar objeto de respostas
+        const respostasIniciais = {};
+        response.data.data.perguntas.forEach(pergunta => {
+          respostasIniciais[pergunta.id] = null;
+        });
+        setRespostas(respostasIniciais);
+        
+      } else {
+        alert(response.data.message);
+        router.back();
       }
       
     } catch (error) {
       console.error('Erro ao carregar quiz:', error);
       if (error.response?.status === 403 || error.response?.status === 400) {
-        alert(error.response.data.message);
+        alert(error.response.data.message || 'Não autorizado para realizar este quiz');
         router.back();
+      } else {
+        alert('Erro ao carregar quiz. Tente novamente.');
+        router.push('/student/cursos');
       }
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleIniciarQuiz = () => {
-    setIniciado(true);
   };
 
   const handleRespostaChange = (perguntaId, opcaoId) => {
@@ -78,31 +108,48 @@ export default function QuizPage() {
   const handleSubmeterQuiz = async () => {
     if (submetendo) return;
     
+    // Limpar timer se existir
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      setTimerInterval(null);
+    }
+    
     // Verificar se todas as perguntas foram respondidas
-    const todasRespondidas = quizData.perguntas.every(p => respostas[p.id]);
-    if (!todasRespondidas && !window.confirm('Você não respondeu todas as perguntas. Deseja submeter mesmo assim?')) {
-      return;
+    const perguntasRespondidas = Object.values(respostas).filter(r => r !== null).length;
+    const totalPerguntas = quizData.perguntas.length;
+    
+    if (perguntasRespondidas < totalPerguntas) {
+      const confirmar = window.confirm(
+        `Você respondeu ${perguntasRespondidas} de ${totalPerguntas} perguntas. Deseja submeter mesmo assim?`
+      );
+      if (!confirmar) return;
     }
 
     setSubmetendo(true);
     
     try {
       // Preparar respostas no formato esperado
-      const respostasArray = Object.entries(respostas).map(([perguntaId, opcaoId]) => ({
-        pergunta_id: parseInt(perguntaId),
-        opcao_id: parseInt(opcaoId)
-      }));
+      const respostasArray = Object.entries(respostas)
+        .filter(([_, opcaoId]) => opcaoId !== null)
+        .map(([perguntaId, opcaoId]) => ({
+          pergunta_id: parseInt(perguntaId),
+          opcao_id: parseInt(opcaoId)
+        }));
 
-      const response = await api.post(`/api/student/quiz/${quizId}/submeter`, {
+      const response = await api.post(`/student/quiz/${quizId}/submeter`, {
         matricula_id: quizData.quiz.matricula_id,
         respostas: respostasArray
       });
 
-      setResultado(response.data);
+      if (response.data.success) {
+        setResultado(response.data.data);
+      } else {
+        alert(response.data.message);
+      }
       
     } catch (error) {
       console.error('Erro ao submeter quiz:', error);
-      alert(error.response?.data?.message || 'Erro ao submeter quiz');
+      alert(error.response?.data?.message || 'Erro ao submeter quiz. Tente novamente.');
     } finally {
       setSubmetendo(false);
     }
@@ -187,7 +234,14 @@ export default function QuizPage() {
                         onClick={() => {
                           setResultado(null);
                           setRespostas({});
-                          setIniciado(true);
+                          setIniciado(false); // Voltar para tela de instruções
+                          
+                          // Re-inicializar respostas
+                          const respostasIniciais = {};
+                          quizData.perguntas.forEach(pergunta => {
+                            respostasIniciais[pergunta.id] = null;
+                          });
+                          setRespostas(respostasIniciais);
                         }}
                       >
                         <i className="bi bi-arrow-clockwise me-2"></i>
@@ -256,7 +310,7 @@ export default function QuizPage() {
                 <div className="d-grid">
                   <button 
                     className="btn btn-success btn-lg"
-                    onClick={handleIniciarQuiz}
+                    onClick={handleIniciarQuiz}  
                   >
                     <i className="bi bi-play-circle me-2"></i>
                     Iniciar Quiz
@@ -289,7 +343,7 @@ export default function QuizPage() {
                   <div className="me-4">
                     <small className="text-muted d-block">Progresso</small>
                     <small>
-                      {Object.keys(respostas).length} de {quizData.perguntas.length} respondidas
+                      {Object.values(respostas).filter(r => r !== null).length} de {quizData.perguntas.length} respondidas
                     </small>
                   </div>
                   
@@ -308,7 +362,7 @@ export default function QuizPage() {
           <div className="row">
             <div className="col-lg-8">
               {quizData.perguntas.map((pergunta, index) => (
-                <div key={pergunta.id} className="card mb-4">
+                <div key={pergunta.id} className="card mb-4" id={`pergunta-${index}`}>
                   <div className="card-header">
                     <h5 className="mb-0">
                       Pergunta {index + 1} de {quizData.perguntas.length}
@@ -378,7 +432,7 @@ export default function QuizPage() {
                     <button 
                       className="btn btn-primary"
                       onClick={handleSubmeterQuiz}
-                      disabled={submetendo || Object.keys(respostas).length === 0}
+                      disabled={submetendo}
                     >
                       {submetendo ? (
                         <>
@@ -393,13 +447,17 @@ export default function QuizPage() {
                       )}
                     </button>
                     
-                    <Link 
-                      href={`/student/curso/${quizData.quiz.curso_id}`}
+                    <button
                       className="btn btn-outline-secondary"
+                      onClick={() => {
+                        if (window.confirm('Tem certeza que deseja sair? Seu progresso será perdido.')) {
+                          router.push(`/student/curso/${quizData.quiz.curso_id}`);
+                        }
+                      }}
                     >
                       <i className="bi bi-arrow-left me-2"></i>
-                      Voltar ao Curso
-                    </Link>
+                      Sair do Quiz
+                    </button>
                   </div>
                 </div>
               </div>

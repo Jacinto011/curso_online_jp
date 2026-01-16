@@ -106,6 +106,12 @@ const Header = () => {
                                             Pagamentos
                                         </Link>
                                     </li>
+                                    <li className="nav-item">
+                                        <Link href="/instructor/certificados" className="nav-link">
+                                            <i className="bi-award"></i>
+                                            Certificados
+                                        </Link>
+                                    </li>
                                 </>
                             )}
 

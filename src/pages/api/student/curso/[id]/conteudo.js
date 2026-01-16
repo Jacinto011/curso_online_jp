@@ -1,3 +1,4 @@
+// src/pages/api/student/curso/[id]/conteudo.js
 import withCors from '../../../../../lib/cors';
 import { query } from '../../../../../lib/database-postgres';
 import { authenticate } from '../../../../../lib/auth';
@@ -124,6 +125,15 @@ async function handler(req, res) {
     const modulosConcluidos = modulos.filter(m => m.concluido).length;
     const progresso = totalModulos > 0 ? Math.round((modulosConcluidos / totalModulos) * 100) : 0;
 
+    // Verificar se curso foi concluído
+    const cursoConcluidoResult = await query(`
+      SELECT status FROM matriculas 
+      WHERE id = $1 AND status = 'concluida'
+    `, [matricula.id]);
+
+    const cursoConcluidoStatus = cursoConcluidoResult.rows.length > 0;
+
+    // Retornar na resposta
     res.status(200).json({
       success: true,
       data: {
@@ -133,7 +143,8 @@ async function handler(req, res) {
         progresso: {
           totalModulos,
           modulosConcluidos,
-          percentual: progresso
+          percentual: progresso,
+          cursoConcluido: cursoConcluidoStatus
         }
       }
     });

@@ -1,10 +1,10 @@
+// src/pages/api/student/quiz/[quizId]/submeter.js
 import withCors from '../../../../../lib/cors';
 import { query } from '../../../../../lib/database-postgres';
 import { authenticate } from '../../../../../lib/auth';
 
 async function handler(req, res) {
   try {
-    // Autenticação
     const user = await authenticate(req);
     if (!user) {
       return res.status(401).json({ 
@@ -34,7 +34,7 @@ async function handler(req, res) {
 
     // Verificar se a matrícula pertence ao usuário
     const matriculaResult = await query(`
-      SELECT id FROM matriculas 
+      SELECT id, curso_id FROM matriculas 
       WHERE id = $1 AND estudante_id = $2
     `, [matricula_id, user.id]);
     
@@ -45,9 +45,11 @@ async function handler(req, res) {
       });
     }
 
-    // Buscar quiz e perguntas
+    const matricula = matriculaResult.rows[0];
+
+    // Buscar dados do quiz
     const quizResult = await query(`
-      SELECT q.*, q.pontuacao_minima, m.id as modulo_id
+      SELECT q.*, m.id as modulo_id
       FROM quizzes q
       JOIN modulos m ON q.modulo_id = m.id
       WHERE q.id = $1
@@ -62,61 +64,103 @@ async function handler(req, res) {
 
     const quiz = quizResult.rows[0];
 
-    // Verificar se já realizou este quiz
-    const resultadoResult = await query(`
-      SELECT id, aprovado FROM resultados_quiz 
-      WHERE matricula_id = $1 AND quiz_id = $2
-    `, [matricula_id, quizId]);
-    
-    if (resultadoResult.rows.length > 0 && resultadoResult.rows[0].aprovado) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Você já foi aprovado neste quiz' 
-      });
-    }
+    // Buscar respostas corretas para calcular pontuação
+    const respostasCorretasResult = await query(`
+      SELECT 
+        p.id as pergunta_id,
+        p.pontos,
+        ARRAY_AGG(o.id) as opcoes_corretas
+      FROM perguntas p
+      JOIN opcoes_resposta o ON p.id = o.pergunta_id
+      WHERE p.quiz_id = $1 AND o.correta = true
+      GROUP BY p.id, p.pontos
+    `, [quizId]);
+
+    const corretores = {};
+    respostasCorretasResult.rows.forEach(row => {
+      corretores[row.pergunta_id] = {
+        pontos: row.pontos || 1,
+        opcoes_corretas: row.opcoes_corretas
+      };
+    });
 
     // Calcular pontuação
     let pontuacaoTotal = 0;
     let maxPontos = 0;
-    
+    let acertos = 0;
+    let totalPerguntas = respostasCorretasResult.rows.length;
+
     for (const resposta of respostas) {
-      const perguntaResult = await query(`
-        SELECT p.*, o.correta
-        FROM perguntas p
-        JOIN opcoes_resposta o ON p.id = o.pergunta_id
-        WHERE p.id = $1 AND o.id = $2
-      `, [resposta.pergunta_id, resposta.opcao_id]);
+      const corretor = corretores[resposta.pergunta_id];
       
-      if (perguntaResult.rows.length > 0 && perguntaResult.rows[0].correta) {
-        pontuacaoTotal += perguntaResult.rows[0].pontos || 1;
+      if (corretor) {
+        maxPontos += corretor.pontos;
+        
+        // Verificar se a opção escolhida está entre as corretas
+        if (corretor.opcoes_corretas.includes(parseInt(resposta.opcao_id))) {
+          pontuacaoTotal += corretor.pontos;
+          acertos++;
+        }
       }
-      
-      maxPontos += perguntaResult.rows[0]?.pontos || 1;
     }
 
     // Calcular percentual
     const percentual = maxPontos > 0 ? Math.round((pontuacaoTotal / maxPontos) * 100) : 0;
     const aprovado = percentual >= quiz.pontuacao_minima;
 
-    // Salvar resultado com ON CONFLICT
+    // Verificar resultado anterior para determinar tentativa
+    const resultadoAnterior = await query(`
+      SELECT tentativas FROM resultados_quiz 
+      WHERE matricula_id = $1 AND quiz_id = $2
+    `, [matricula_id, quizId]);
+
+    const tentativasAtuais = resultadoAnterior.rows.length > 0 
+      ? resultadoAnterior.rows[0].tentativas + 1 
+      : 1;
+
+    // Salvar/atualizar resultado
     await query(`
-      INSERT INTO resultados_quiz (matricula_id, quiz_id, pontuacao, aprovado, data_realizacao)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+      INSERT INTO resultados_quiz (matricula_id, quiz_id, pontuacao, aprovado, tentativas)
+      VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (matricula_id, quiz_id) 
       DO UPDATE SET 
-        pontuacao = EXCLUDED.pontuacao, 
-        aprovado = EXCLUDED.aprovado, 
-        data_realizacao = EXCLUDED.data_realizacao
-    `, [matricula_id, quizId, percentual, aprovado]);
+        pontuacao = EXCLUDED.pontuacao,
+        aprovado = EXCLUDED.aprovado,
+        tentativas = EXCLUDED.tentativas,
+        data_realizacao = CURRENT_TIMESTAMP
+    `, [matricula_id, quizId, percentual, aprovado, tentativasAtuais]);
 
-    // Se aprovado, marcar módulo como concluído
+    // Se aprovado, marcar progresso no módulo
     if (aprovado) {
-      await query(`
-        INSERT INTO progresso (matricula_id, modulo_id, concluido, data_conclusao)
-        VALUES ($1, $2, true, CURRENT_TIMESTAMP)
-        ON CONFLICT (matricula_id, modulo_id) 
-        DO UPDATE SET concluido = EXCLUDED.concluido, data_conclusao = EXCLUDED.data_conclusao
+      // Verificar se já existe progresso para este módulo
+      const progressoExistente = await query(`
+        SELECT id FROM progresso 
+        WHERE matricula_id = $1 AND modulo_id = $2 AND material_id IS NULL
       `, [matricula_id, quiz.modulo_id]);
+      
+      if (progressoExistente.rows.length === 0) {
+        await query(`
+          INSERT INTO progresso (matricula_id, modulo_id, concluido, data_conclusao)
+          VALUES ($1, $2, true, CURRENT_TIMESTAMP)
+        `, [matricula_id, quiz.modulo_id]);
+      } else {
+        await query(`
+          UPDATE progresso SET concluido = true, data_conclusao = CURRENT_TIMESTAMP
+          WHERE matricula_id = $1 AND modulo_id = $2 AND material_id IS NULL
+        `, [matricula_id, quiz.modulo_id]);
+      }
+
+      // Verificar se todos os módulos do curso foram concluídos
+      const todosModulosConcluidos = await verificarConclusaoCurso(matricula_id, matricula.curso_id);
+      
+      if (todosModulosConcluidos) {
+        // Atualizar matrícula para concluída
+        await query(`
+          UPDATE matriculas 
+          SET status = 'concluida', data_conclusao = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [matricula_id]);
+      }
     }
 
     res.status(200).json({
@@ -125,10 +169,12 @@ async function handler(req, res) {
         pontuacao: percentual,
         pontuacao_minima: quiz.pontuacao_minima,
         aprovado,
-        max_pontos: maxPontos,
+        acertos,
+        total_perguntas: totalPerguntas,
+        tentativas: tentativasAtuais,
         mensagem: aprovado 
-          ? 'Parabéns! Você foi aprovado no quiz e pode prosseguir para o próximo módulo.' 
-          : `Você precisa de ${quiz.pontuacao_minima}% para aprovação. Tente novamente.`
+          ? `🎉 Parabéns! Você foi aprovado com ${percentual}% e pode prosseguir para o próximo módulo!` 
+          : `❌ Você obteve ${percentual}%. Precisa de ${quiz.pontuacao_minima}% para aprovação. Tente novamente.`
       }
     });
     
@@ -139,6 +185,32 @@ async function handler(req, res) {
       message: 'Erro interno do servidor',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  }
+}
+
+async function verificarConclusaoCurso(matriculaId, cursoId) {
+  try {
+    const result = await query(`
+      WITH modulos_curso AS (
+        SELECT COUNT(*) as total FROM modulos WHERE curso_id = $1
+      ),
+      modulos_concluidos AS (
+        SELECT COUNT(DISTINCT modulo_id) as concluidos 
+        FROM progresso 
+        WHERE matricula_id = $2 
+          AND concluido = true
+          AND material_id IS NULL
+      )
+      SELECT 
+        (SELECT total FROM modulos_curso) as total,
+        (SELECT concluidos FROM modulos_concluidos) as concluidos
+    `, [cursoId, matriculaId]);
+
+    const { total, concluidos } = result.rows[0];
+    return concluidos === total;
+  } catch (error) {
+    console.error('Erro ao verificar conclusão do curso:', error);
+    return false;
   }
 }
 
