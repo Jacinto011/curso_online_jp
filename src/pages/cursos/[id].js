@@ -377,7 +377,7 @@ export default function DetalhesCurso() {
                         <h4 className="mt-2">Curso Concluído!</h4>
                         <p className="text-muted">Parabéns pela conclusão!</p>
                         <Link
-                          href={`/student/certificados/${matricula.certificado_id}`}
+                          href={`/student/certificados/`}
                           className="btn btn-success w-100"
                         >
                           <i className="bi bi-award me-2"></i>

@@ -6,7 +6,7 @@ export const config = {
   },
 };
 
-// Função para processar multipart form data
+// Parse multipart form data
 async function parseMultipartFormData(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -21,13 +21,13 @@ async function parseMultipartFormData(req) {
         const contentType = req.headers['content-type'];
         
         if (!contentType || !contentType.includes('multipart/form-data')) {
-          reject(new Error('Content-Type must be multipart/form-data'));
+          reject(new Error('Content-Type deve ser multipart/form-data'));
           return;
         }
         
         const boundary = contentType.split('boundary=')[1];
         if (!boundary) {
-          reject(new Error('No boundary found in Content-Type'));
+          reject(new Error('Boundary não encontrado'));
           return;
         }
         
@@ -74,8 +74,8 @@ async function parseMultipartFormData(req) {
         
         resolve({ fields, fileBuffer, fileName, fileType, cursoId });
       } catch (error) {
-        console.error('❌ Erro no parse do form data:', error.message);
-        reject(new Error('Erro ao processar dados do formulário'));
+        console.error('❌ Parse error:', error.message);
+        reject(new Error('Erro ao processar formulário'));
       }
     });
     
@@ -83,7 +83,7 @@ async function parseMultipartFormData(req) {
   });
 }
 
-// Função para detectar tipo de arquivo pela extensão
+// Detectar tipo de arquivo
 function detectFileType(filename, mimeType) {
   if (mimeType && mimeType !== 'application/octet-stream') {
     return mimeType;
@@ -120,35 +120,20 @@ function detectFileType(filename, mimeType) {
     'pdf': 'application/pdf',
     'doc': 'application/msword',
     'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'xls': 'application/vnd.ms-excel',
-    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'ppt': 'application/vnd.ms-powerpoint',
-    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'txt': 'text/plain',
-    'csv': 'text/csv',
-    'rtf': 'application/rtf',
-    
-    // Outros
-    'zip': 'application/zip',
-    'rar': 'application/vnd.rar',
-    '7z': 'application/x-7z-compressed'
+    'csv': 'text/csv'
   };
   
   return mimeTypes[extension] || 'application/octet-stream';
 }
 
-// Função para determinar o tipo de conteúdo
-function getContentType(fileType) {
-  const type = fileType.split('/')[0];
-  return type === 'video' || type === 'image' || type === 'application' || type === 'text' ? type : 'document';
-}
-
 export default async function handler(req, res) {
-  // Headers CORS
+  // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -161,29 +146,19 @@ export default async function handler(req, res) {
     });
   }
 
+  console.log('🔄 Upload request recebido');
+  
   try {
-    console.log('🔄 Recebendo requisição de upload...');
-    console.log('📋 Content-Type:', req.headers['content-type']);
-
-    // ✅ REMOVIDA AUTENTICAÇÃO OBRIGATÓRIA
-    // Apenas log para debug se tiver token
-    if (req.headers.authorization) {
-      console.log('🔐 Token presente, mas não obrigatório para upload');
-    }
-    
-    // Processar form data
+    // Parse dos dados
     const { fields, fileBuffer, fileName, fileType, cursoId } = await parseMultipartFormData(req);
     
-    console.log('✅ Dados processados:', {
-      camposRecebidos: Object.keys(fields),
-      temArquivo: !!fileBuffer,
-      nomeArquivo: fileName,
-      tipoArquivo: fileType,
-      tamanhoArquivo: fileBuffer ? `${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB` : 'N/A',
-      cursoId: cursoId
+    console.log('✅ Dados parseados:', {
+      arquivo: fileName ? `${fileName} (${(fileBuffer?.length || 0) / 1024 / 1024}MB)` : 'Nenhum',
+      tipo: fileType,
+      cursoId: cursoId || 'Nenhum'
     });
 
-    // Validações
+    // Validações básicas
     if (!fileBuffer || !fileName) {
       return res.status(400).json({
         success: false,
@@ -191,69 +166,58 @@ export default async function handler(req, res) {
       });
     }
 
-    // Validar tamanho do arquivo (200MB máximo para vídeos, 10MB para outros)
-    const maxSize = fileType.startsWith('video/') ? 200 * 1024 * 1024 : 10 * 1024 * 1024;
-    if (fileBuffer.length > maxSize) {
-      return res.status(400).json({
-        success: false,
-        message: `Arquivo muito grande. Tamanho máximo: ${maxSize / 1024 / 1024}MB`
-      });
-    }
-
-    // Determinar tipo de arquivo final
+    // Detectar tipo final
     const finalFileType = detectFileType(fileName, fileType);
-    const contentType = getContentType(finalFileType);
+    const fileSizeMB = (fileBuffer.length / 1024 / 1024).toFixed(2);
     
-    console.log('📄 Tipo detectado:', {
-      original: fileType,
-      final: finalFileType,
-      contentType: contentType
-    });
+    console.log(`📄 Arquivo: ${fileName}, Tipo: ${finalFileType}, Tamanho: ${fileSizeMB}MB`);
 
     // Validar tipos permitidos
     const allowedTypes = [
       // Imagens
       'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
       
-      // Vídeos
+      // VÍDEOS - TODOS permitidos no Supabase
       'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+      'video/x-msvideo', 'video/x-ms-wmv', 'video/x-flv', 'video/x-matroska',
       
       // Documentos
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-powerpoint',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'text/plain',
-      'text/csv',
-      'application/rtf',
-      
-      // Outros
-      'application/zip',
-      'application/vnd.rar',
-      'application/x-7z-compressed'
+      'text/csv'
     ];
 
     if (!allowedTypes.includes(finalFileType)) {
       return res.status(400).json({
         success: false,
         message: 'Tipo de arquivo não permitido',
-        received_type: finalFileType,
-        allowed_types: allowedTypes
+        received_type: finalFileType
       });
     }
 
-    // Determinar pasta baseada no curso (se fornecido)
-    let folder = 'geral';
-    if (cursoId) {
-      folder = `cursos/${cursoId}`;
-      console.log('📂 Usando pasta específica do curso:', folder);
+    // Validação de tamanho (200MB máximo)
+    const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+    if (fileBuffer.length > MAX_FILE_SIZE) {
+      return res.status(400).json({
+        success: false,
+        message: `Arquivo muito grande (${fileSizeMB}MB). Limite máximo: ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+        maxSizeMB: MAX_FILE_SIZE / 1024 / 1024,
+        currentSizeMB: fileSizeMB
+      });
     }
 
-    // Fazer upload
-    console.log('📤 Iniciando upload para serviço de armazenamento...');
+    // Determinar pasta
+    let folder = 'geral';
+    if (cursoId && cursoId.trim() !== '') {
+      folder = `cursos/${cursoId.trim()}`;
+      console.log('📂 Pasta do curso:', folder);
+    }
+
+    // Upload
+    console.log('📤 Iniciando upload...');
+    const startTime = Date.now();
     
     const uploadResult = await storageService.uploadFile(
       fileBuffer,
@@ -262,79 +226,73 @@ export default async function handler(req, res) {
       folder
     );
 
-    console.log('✅ Upload realizado com sucesso:', {
+    const uploadTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    
+    console.log('✅ Upload concluído:', {
       provider: uploadResult.provider,
-      fileName: uploadResult.fileName,
-      url: uploadResult.url,
-      size: uploadResult.bytes
+      tempo: `${uploadTime}s`,
+      tamanho: uploadResult.bytes ? `${(uploadResult.bytes / 1024 / 1024).toFixed(2)}MB` : 'N/A'
     });
 
-    // Determinar URL compatível (mantendo estrutura antiga)
-    let urlPath = '';
-    switch (contentType) {
-      case 'video':
-        urlPath = '/uploads/videos/';
-        break;
-      case 'image':
-        urlPath = '/uploads/images/';
-        break;
-      case 'application':
-      case 'text':
-        urlPath = '/uploads/documents/';
-        break;
-      default:
-        urlPath = '/uploads/documents/';
-    }
+    // Determinar tipo de conteúdo para resposta
+    let contentType = 'file';
+    if (finalFileType.startsWith('video/')) contentType = 'video';
+    else if (finalFileType.startsWith('image/')) contentType = 'image';
+    else if (finalFileType.includes('pdf')) contentType = 'document';
 
-    const localUrl = `${urlPath}${uploadResult.fileName}`;
-
-    // Retornar resposta
-    return res.status(200).json({
+    // Montar resposta
+    const response = {
       success: true,
       message: 'Arquivo enviado com sucesso',
       file: {
         originalName: fileName,
         filename: uploadResult.fileName,
-        // URLs: real e compatível
-        url: uploadResult.url, // URL real do serviço externo
-        localUrl: localUrl, // URL compatível com sistema antigo
+        url: uploadResult.url,
+        localUrl: uploadResult.localUrl,
         size: uploadResult.bytes || fileBuffer.length,
+        sizeMB: parseFloat(fileSizeMB),
         mimetype: finalFileType,
         type: contentType,
-        // Metadados
         provider: uploadResult.provider,
-        public_id: uploadResult.public_id || null,
         path: uploadResult.path || null,
-        // Informações adicionais
         curso_id: cursoId || null,
-        uploadedAt: new Date().toISOString()
+        uploadedAt: new Date().toISOString(),
+        uploadTime: `${uploadTime}s`,
+        // INFO IMPORTANTE: Mostrar que vídeos vão sempre para Supabase
+        note: finalFileType.startsWith('video/') ? 'Vídeo armazenado no Supabase' : null
       }
-    });
+    };
+
+    return res.status(200).json(response);
 
   } catch (error) {
-    console.error('💥 ERRO NO PROCESSAMENTO:', error.message);
+    console.error('💥 ERRO NO UPLOAD:', error.message);
     
-    let message = 'Erro interno do servidor';
     let statusCode = 500;
+    let message = 'Erro interno do servidor';
 
-    if (error.message.includes('Content-Type must be')) {
-      message = 'Formato de requisição inválido. Use multipart/form-data para uploads.';
+    if (error.message.includes('Content-Type') || error.message.includes('multipart')) {
       statusCode = 400;
-    } else if (error.message.includes('Arquivo muito grande')) {
+      message = 'Formato de requisição inválido. Use multipart/form-data.';
+    } else if (error.message.includes('Tamanho') || error.message.includes('tamanho') || error.message.includes('size')) {
+      statusCode = 400;
       message = error.message;
+    } else if (error.message.includes('Tipo de arquivo')) {
       statusCode = 400;
-    } else if (error.message.includes('Tipo de arquivo não permitido')) {
       message = error.message;
-      statusCode = 400;
     } else if (error.message.includes('Nenhum arquivo')) {
-      message = error.message;
       statusCode = 400;
+      message = error.message;
+    } else if (error.message.includes('Bucket não')) {
+      statusCode = 500;
+      message = 'Configuração de armazenamento incompleta. Contate o administrador.';
     }
 
     return res.status(statusCode).json({
       success: false,
       message,
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      timestamp: new Date().toISOString()
     });
   }
 }

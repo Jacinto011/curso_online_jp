@@ -107,7 +107,7 @@ async function handler(req, res) {
         (usuario_id, tipo, titulo, mensagem, link) 
         VALUES ($1, 'curso', 'Matrícula confirmada', 
                 'Sua matrícula no curso "${curso.titulo}" foi confirmada! Comece a estudar agora.',
-                '/student/cursos/${cursoId}')
+                '/student/curso/${cursoId}')
       `, [user.id]);
     }
 

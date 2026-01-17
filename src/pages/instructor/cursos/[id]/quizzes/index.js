@@ -81,7 +81,7 @@ export default function QuizzesInstrutor() {
     }
 
     try {
-      await api.post('/api/instructor/quizzes', formData);
+      await api.post('/instructor/quizzes', formData);
       setShowForm(false);
       setFormData({
         modulo_id: '',
@@ -105,7 +105,7 @@ export default function QuizzesInstrutor() {
     }
 
     try {
-      await api.delete(`/api/instructor/quizzes/${quizId}`);
+      await api.delete(`/instructor/quizzes/${quizId}`);
       fetchDados();
       alert('Quiz excluído com sucesso!');
     } catch (error) {

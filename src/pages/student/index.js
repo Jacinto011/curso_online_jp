@@ -269,7 +269,7 @@ export default function StudentDashboard() {
                             <div className="d-flex justify-content-between align-items-center">
                               {estaConcluido ? (
                                 <Link 
-                                  href={`/student/certificados/${curso.matricula_id}`}
+                                  href={`/student/certificados/`}
                                   className="btn btn-success btn-sm"
                                 >
                                   <i className="bi bi-award me-1"></i>

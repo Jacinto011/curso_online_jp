@@ -14,6 +14,7 @@ export default function CursoEstudante() {
   const [moduloAtivo, setModuloAtivo] = useState(null);
   const [materialAtivo, setMaterialAtivo] = useState(null);
   const [abaAtiva, setAbaAtiva] = useState('modulos'); // 'modulos', 'materiais', 'conteudo'
+  const [mensagem, setMensagem] = useState(null);
 
   useEffect(() => {
     if (!isStudent || !cursoId) {
@@ -27,7 +28,6 @@ export default function CursoEstudante() {
     try {
       setLoading(true);
       const response = await api.get(`/student/curso/${cursoId}/conteudo`);
-      //console.log(response.data?.data || []);
       
       setCursoData(response.data?.data || []);
       
@@ -55,49 +55,198 @@ export default function CursoEstudante() {
     }
   };
 
-  const handleMaterialConcluido = async (materialId) => {
-    try {
-      await api.post('/student/progresso/registrar', {
-        matricula_id: cursoData.matricula.id,
-        modulo_id: moduloAtivo,
-        material_id: materialId
-      });
-      
-      // Recarregar conteúdo
-      fetchCursoConteudo();
-      
-    } catch (error) {
-      console.error('Erro ao registrar progresso:', error);
+  // Função auxiliar para verificar se pode avançar
+  const verificarSePodeAvançar = (modulo) => {
+    if (!modulo) return false;
+    
+    // Verifica se todos os materiais estão concluídos
+    const todosMateriaisConcluidos = modulo.materiais.every(m => m.concluido);
+    
+    // Se tem quiz, verificar se foi aprovado
+    if (modulo.quiz_id) {
+      return todosMateriaisConcluidos && modulo.quiz_aprovado;
     }
+    
+    return todosMateriaisConcluidos;
   };
+
+  // Função auxiliar para verificar se módulo está disponível
+  const verificarModuloDisponivel = (modulo) => {
+    // Se for o primeiro módulo, está sempre disponível
+    if (modulo.ordem === 1) return true;
+    
+    // Verificar se o módulo anterior foi concluído
+    const moduloAnterior = cursoData.modulos.find(m => m.ordem === modulo.ordem - 1);
+    if (!moduloAnterior) return true;
+    
+    return verificarSePodeAvançar(moduloAnterior);
+
+
+  };
+
+const handleMaterialConcluido = async (materialId) => {
+  try {
+    setMensagem(null);
+    
+    const response = await api.post('/student/progresso/registrar', {
+      matricula_id: cursoData.matricula.id,
+      modulo_id: moduloAtivo,
+      material_id: materialId
+    });
+
+    const data = response.data;
+    
+    // Sempre mostrar a mensagem do backend
+    if (data.message) {
+      setMensagem({ 
+        tipo: data.success ? 'success' : 'info', 
+        texto: data.message 
+      });
+    }
+
+    // Se precisa de quiz, oferecer para ir direto
+    if (data.needQuiz && data.quizId) {
+      setTimeout(() => {
+        if (confirm('Deseja realizar o quiz agora?')) {
+          router.push(`/student/quiz/${data.quizId}`);
+        }
+      }, 1000);
+    }
+
+    // Se curso concluído, mostrar certificado
+    if (data.cursoConcluido && data.certificadoUrl) {
+      setTimeout(() => {
+        if (confirm('Parabéns! Você concluiu o curso! Deseja visualizar seu certificado?')) {
+          window.open(data.certificadoUrl, '_blank');
+        }
+      }, 1000);
+    }
+    
+    // Recarregar conteúdo
+    await fetchCursoConteudo();
+
+    // Avançar para o próximo material se não for o último ou se não precisar de quiz
+    if (data.success && !data.needQuiz) {
+      const modulo = cursoData.modulos.find(m => m.id === moduloAtivo);
+      const currentMaterialIndex = modulo.materiais.findIndex(m => m.id === materialId);
+      
+      // Se não for o último material, avançar
+      if (!data.isLastMaterial && currentMaterialIndex < modulo.materiais.length - 1) {
+        const nextMaterial = modulo.materiais[currentMaterialIndex + 1];
+        setMaterialAtivo(nextMaterial.id);
+        
+        if (window.innerWidth < 768) {
+          setAbaAtiva('conteudo');
+        }
+      } 
+      // Se módulo foi concluído, ir para próximo módulo
+      else if (data.moduloConcluido) {
+        const currentModuloIndex = cursoData.modulos.findIndex(m => m.id === moduloAtivo);
+        
+        if (currentModuloIndex < cursoData.modulos.length - 1) {
+          const nextModulo = cursoData.modulos[currentModuloIndex + 1];
+          
+          if (verificarModuloDisponivel(nextModulo)) {
+            setModuloAtivo(nextModulo.id);
+            const primeiroMaterial = nextModulo.materiais.find(m => !m.concluido);
+            setMaterialAtivo(primeiroMaterial?.id || null);
+            
+            if (window.innerWidth < 768) {
+              setAbaAtiva('materiais');
+            }
+          }
+        }
+      }
+    }
+    
+  } catch (error) {
+    console.error('Erro ao registrar progresso:', error);
+    if (error.response?.data?.message) {
+      setMensagem({ tipo: 'danger', texto: error.response.data.message });
+    } else {
+      setMensagem({ tipo: 'danger', texto: 'Erro ao registrar progresso. Tente novamente.' });
+    }
+  }
+};
 
   const handleModuloChange = (moduloId) => {
     const modulo = cursoData.modulos.find(m => m.id === moduloId);
     
     // Verificar se módulo está disponível
-    if (modulo.ordem === 1 || modulo.modulo_anterior_concluido === 1) {
-      setModuloAtivo(moduloId);
-      
-      // Encontrar primeiro material não concluído
-      const primeiroMaterial = modulo.materiais.find(m => !m.concluido);
-      setMaterialAtivo(primeiroMaterial?.id || null);
-      
-      // Em mobile, muda para aba de materiais
-      if (window.innerWidth < 768) {
-        setAbaAtiva('materiais');
+    const isAvailable = verificarModuloDisponivel(modulo);
+    
+    if (!isAvailable) {
+      setMensagem({ 
+        tipo: 'warning', 
+        texto: 'Complete o módulo anterior primeiro!' 
+      });
+      return;
+    }
+
+    // Verificar se módulo atual tem quiz não aprovado
+    if (moduloAtivo) {
+      const moduloAtualObj = cursoData.modulos.find(m => m.id === moduloAtivo);
+      const isCurrentModuleCompleted = verificarSePodeAvançar(moduloAtualObj);
+
+      if (!isCurrentModuleCompleted && moduloAtualObj?.quiz_id && !moduloAtualObj?.quiz_aprovado) {
+        setMensagem({ 
+          tipo: 'warning', 
+          texto: 'Você precisa aprovar no quiz do módulo atual antes de mudar de módulo!' 
+        });
+        return;
       }
-    } else {
-      alert('Complete o módulo anterior primeiro!');
+    }
+
+    setModuloAtivo(moduloId);
+    setMensagem(null);
+    
+    // Encontrar primeiro material não concluído
+    const primeiroMaterial = modulo.materiais.find(m => !m.concluido);
+    setMaterialAtivo(primeiroMaterial?.id || null);
+    
+    // Em mobile, muda para aba de materiais
+    if (window.innerWidth < 768) {
+      setAbaAtiva('materiais');
     }
   };
 
   const handleMaterialSelect = (materialId) => {
     setMaterialAtivo(materialId);
+    setMensagem(null);
     
     // Em mobile, muda para aba de conteúdo
     if (window.innerWidth < 768) {
       setAbaAtiva('conteudo');
     }
+  };
+
+  // Funções para o botão de próximo
+  const handleNextButton = () => {
+    setMensagem(null);
+    
+    if (abaAtiva === 'modulos') {
+      setAbaAtiva('materiais');
+    } else if (abaAtiva === 'materiais') {
+      setAbaAtiva('conteudo');
+    } else if (abaAtiva === 'conteudo' && materialAtual && !materialAtual.concluido) {
+      handleMaterialConcluido(materialAtual.id);
+    }
+  };
+
+  const isNextButtonDisabled = () => {
+    if (abaAtiva === 'modulos') return false;
+    if (abaAtiva === 'materiais') return !moduloAtual;
+    if (abaAtiva === 'conteudo') return !materialAtual || materialAtual.concluido;
+    return false;
+  };
+
+  const getNextButtonText = () => {
+    if (abaAtiva === 'modulos') return 'Próximo';
+    if (abaAtiva === 'materiais') return 'Ver Conteúdo';
+    if (abaAtiva === 'conteudo') {
+      return materialAtual?.concluido ? 'Concluído' : 'Marcar como Concluído';
+    }
+    return 'Próximo';
   };
 
   if (loading || !cursoData) {
@@ -117,6 +266,44 @@ export default function CursoEstudante() {
 
   return (
     <div className="container-fluid" style={{ minHeight: 'calc(100vh - 56px)' }}>
+      <style jsx>{`
+        .pulse-animation {
+          animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+          100% { transform: scale(1); }
+        }
+        
+        .bloqueado {
+          opacity: 0.5;
+          cursor: not-allowed;
+          position: relative;
+        }
+        
+        .bloqueado::after {
+          content: "🔒";
+          position: absolute;
+          right: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 12px;
+        }
+        
+        .quiz-pendente {
+          border: 2px solid #ffc107;
+          animation: border-pulse 2s infinite;
+        }
+        
+        @keyframes border-pulse {
+          0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+          70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+        }
+      `}</style>
+      
       {/* Header do Curso - Visível em todas as telas */}
       <div className="bg-white border-bottom py-3">
         <div className="container">
@@ -143,6 +330,20 @@ export default function CursoEstudante() {
           </div>
         </div>
       </div>
+
+      {/* Mensagens de Feedback */}
+      {mensagem && (
+        <div className="container mt-3">
+          <div className={`alert alert-${mensagem.tipo} alert-dismissible fade show`} role="alert">
+            {mensagem.texto}
+            <button 
+              type="button" 
+              className="btn-close" 
+              onClick={() => setMensagem(null)}
+            ></button>
+          </div>
+        </div>
+      )}
 
       {/* Navegação Mobile */}
       <div className="d-block d-md-none border-bottom">
@@ -180,14 +381,16 @@ export default function CursoEstudante() {
             <h6 className="mb-3">Módulos</h6>
             <div className="list-group list-group-flush">
               {cursoData.modulos.map(modulo => {
-                const disponivel = modulo.ordem === 1 || modulo.modulo_anterior_concluido === 1;
+                const disponivel = verificarModuloDisponivel(modulo);
+                const moduloCompleto = verificarSePodeAvançar(modulo);
+                const temQuizPendente = modulo.quiz_id && !modulo.quiz_aprovado && modulo.materiais.every(m => m.concluido);
                 
                 return (
                   <button
                     key={modulo.id}
                     className={`list-group-item list-group-item-action border-0 rounded mb-1 ${
                       moduloAtivo === modulo.id ? 'bg-primary text-white' : ''
-                    } ${!disponivel ? 'opacity-50' : ''}`}
+                    } ${!disponivel ? 'bloqueado' : ''} ${temQuizPendente ? 'quiz-pendente' : ''}`}
                     onClick={() => disponivel && handleModuloChange(modulo.id)}
                     disabled={!disponivel}
                   >
@@ -202,12 +405,17 @@ export default function CursoEstudante() {
                           <span className={`small ${moduloAtivo === modulo.id ? 'text-white' : ''}`}>
                             {modulo.titulo}
                           </span>
-                          {modulo.concluido && (
-                            <i className="bi bi-check-circle text-success"></i>
-                          )}
+                          <div>
+                            {moduloCompleto ? (
+                              <i className="bi bi-check-circle text-success"></i>
+                            ) : temQuizPendente ? (
+                              <i className="bi bi-exclamation-triangle text-warning"></i>
+                            ) : null}
+                          </div>
                         </div>
                         <small className={`d-block ${moduloAtivo === modulo.id ? 'text-white opacity-75' : 'text-muted'}`}>
                           {modulo.materiais?.length || 0} materiais
+                          {temQuizPendente && ' • Quiz pendente'}
                         </small>
                       </div>
                     </div>
@@ -225,6 +433,12 @@ export default function CursoEstudante() {
               <h6 className="mb-3">{moduloAtual.titulo}</h6>
               <small className="text-muted d-block mb-3">
                 {moduloAtual.materiais.filter(m => m.concluido).length} de {moduloAtual.materiais.length} concluídos
+                {moduloAtual.quiz_id && !moduloAtual.quiz_aprovado && (
+                  <span className="text-warning d-block">
+                    <i className="bi bi-exclamation-triangle me-1"></i>
+                    Quiz pendente
+                  </span>
+                )}
               </small>
               
               <div className="list-group list-group-flush">
@@ -264,11 +478,22 @@ export default function CursoEstudante() {
                 <div className="mt-4">
                   <Link 
                     href={`/student/quiz/${moduloAtual.quiz_id}`}
-                    className={`btn btn-${moduloAtual.quiz_aprovado ? 'success' : 'warning'} w-100`}
+                    className={`btn btn-quiz-pendente btn-${moduloAtual.quiz_aprovado ? 'success' : 'warning'} w-100 ${
+                      !moduloAtual.quiz_aprovado && moduloAtual.materiais.every(m => m.concluido) ? 'quiz-pendente' : ''
+                    }`}
                   >
                     <i className="bi bi-question-circle me-2"></i>
-                    {moduloAtual.quiz_aprovado ? 'Quiz Aprovado' : 'Realizar Quiz'}
+                    {moduloAtual.quiz_aprovado ? 'Quiz Aprovado' : (
+                      moduloAtual.materiais.every(m => m.concluido) ? 'Realizar Quiz Agora!' : 'Quiz (disponível após materiais)'
+                    )}
                   </Link>
+                  
+                  {!moduloAtual.quiz_aprovado && moduloAtual.materiais.every(m => m.concluido) && (
+                    <small className="text-warning d-block mt-2">
+                      <i className="bi bi-info-circle me-1"></i>
+                      Você precisa aprovar no quiz para avançar
+                    </small>
+                  )}
                 </div>
               )}
             </div>
@@ -306,18 +531,10 @@ export default function CursoEstudante() {
             </small>
             <button 
               className="btn btn-outline-primary btn-sm"
-              onClick={() => {
-                if (abaAtiva === 'modulos') setAbaAtiva('materiais');
-                if (abaAtiva === 'materiais') setAbaAtiva('conteudo');
-                if (abaAtiva === 'conteudo' && materialAtual && !materialAtual.concluido) {
-                  handleMaterialConcluido(materialAtual.id);
-                }
-              }}
-              disabled={abaAtiva === 'conteudo' && (!materialAtual || materialAtual.concluido)}
+              onClick={handleNextButton}
+              disabled={isNextButtonDisabled()}
             >
-              {abaAtiva === 'modulos' && 'Próximo'}
-              {abaAtiva === 'materiais' && 'Ver Conteúdo'}
-              {abaAtiva === 'conteudo' && (materialAtual?.concluido ? 'Concluído' : 'Marcar como Concluído')}
+              {getNextButtonText()}
             </button>
           </div>
         </div>
@@ -332,20 +549,24 @@ export default function CursoEstudante() {
         <h5 className="mb-3">Módulos do Curso</h5>
         <div className="list-group">
           {cursoData.modulos.map(modulo => {
-            const disponivel = modulo.ordem === 1 || modulo.modulo_anterior_concluido === 1;
+            const disponivel = verificarModuloDisponivel(modulo);
+            const moduloCompleto = verificarSePodeAvançar(modulo);
+            const temQuizPendente = modulo.quiz_id && !modulo.quiz_aprovado && modulo.materiais.every(m => m.concluido);
             
             return (
               <button
                 key={modulo.id}
                 className={`list-group-item list-group-item-action mb-2 ${
                   moduloAtivo === modulo.id ? 'active' : ''
-                } ${!disponivel ? 'opacity-50' : ''}`}
+                } ${!disponivel ? 'bloqueado' : ''} ${temQuizPendente ? 'quiz-pendente' : ''}`}
                 onClick={() => disponivel && handleModuloChange(modulo.id)}
                 disabled={!disponivel}
               >
                 <div className="d-flex justify-content-between align-items-center">
                   <div className="d-flex align-items-center">
-                    <div className="rounded-circle bg-light d-flex align-items-center justify-content-center me-3"
+                    <div className={`rounded-circle d-flex align-items-center justify-content-center me-3 ${
+                      moduloAtivo === modulo.id ? 'bg-white text-primary' : 'bg-light'
+                    }`}
                          style={{ width: '32px', height: '32px' }}>
                       <strong>{modulo.ordem}</strong>
                     </div>
@@ -353,13 +574,18 @@ export default function CursoEstudante() {
                       <div className="fw-bold">{modulo.titulo}</div>
                       <small className="text-muted">
                         {modulo.materiais?.length || 0} materiais
-                        {modulo.concluido && ' • Concluído'}
+                        {moduloCompleto ? ' • Concluído' : ''}
+                        {temQuizPendente ? ' • Quiz pendente' : ''}
                       </small>
                     </div>
                   </div>
-                  {modulo.concluido && (
-                    <i className="bi bi-check-circle text-success"></i>
-                  )}
+                  <div>
+                    {moduloCompleto ? (
+                      <i className="bi bi-check-circle text-success"></i>
+                    ) : temQuizPendente ? (
+                      <i className="bi bi-exclamation-triangle text-warning"></i>
+                    ) : null}
+                  </div>
                 </div>
               </button>
             );
@@ -393,6 +619,12 @@ export default function CursoEstudante() {
           </div>
           <small className="text-muted">
             {moduloAtual.materiais.filter(m => m.concluido).length}/{moduloAtual.materiais.length}
+            {moduloAtual.quiz_id && !moduloAtual.quiz_aprovado && (
+              <span className="text-warning d-block">
+                <i className="bi bi-exclamation-triangle me-1"></i>
+                Quiz pendente
+              </span>
+            )}
           </small>
         </div>
 
@@ -431,11 +663,22 @@ export default function CursoEstudante() {
           <div className="mt-4">
             <Link 
               href={`/student/quiz/${moduloAtual.quiz_id}`}
-              className={`btn btn-${moduloAtual.quiz_aprovado ? 'success' : 'warning'} w-100`}
+              className={`btn btn-quiz-pendente btn-${moduloAtual.quiz_aprovado ? 'success' : 'warning'} w-100 ${
+                !moduloAtual.quiz_aprovado && moduloAtual.materiais.every(m => m.concluido) ? 'quiz-pendente' : ''
+              }`}
             >
               <i className="bi bi-question-circle me-2"></i>
-              {moduloAtual.quiz_aprovado ? 'Quiz Aprovado' : 'Realizar Quiz'}
+              {moduloAtual.quiz_aprovado ? 'Quiz Aprovado' : (
+                moduloAtual.materiais.every(m => m.concluido) ? 'Realizar Quiz Agora!' : 'Quiz (disponível após materiais)'
+              )}
             </Link>
+            
+            {!moduloAtual.quiz_aprovado && moduloAtual.materiais.every(m => m.concluido) && (
+              <small className="text-warning d-block mt-2 text-center">
+                <i className="bi bi-info-circle me-1"></i>
+                Você precisa aprovar no quiz para avançar para o próximo módulo
+              </small>
+            )}
           </div>
         )}
       </div>
@@ -464,11 +707,27 @@ export default function CursoEstudante() {
           <h5 className="mt-2">{materialAtual.titulo}</h5>
           <small className="text-muted">
             Módulo {moduloAtual.ordem}: {moduloAtual.titulo}
+            {moduloAtual.quiz_id && !moduloAtual.quiz_aprovado && (
+              <span className="text-warning d-block">
+                <i className="bi bi-exclamation-triangle me-1"></i>
+                Quiz pendente neste módulo
+              </span>
+            )}
           </small>
         </div>
 
         {/* Conteúdo do Material */}
         {renderMaterialConteudo(materialAtual)}
+        
+        {/* Aviso sobre quiz */}
+        {moduloAtual.quiz_id && !moduloAtual.quiz_aprovado && 
+         moduloAtual.materiais.filter(m => m.concluido).length === moduloAtual.materiais.length - 1 &&
+         !materialAtual.concluido && (
+          <div className="alert alert-warning mt-3">
+            <i className="bi bi-exclamation-triangle me-2"></i>
+            <strong>Atenção:</strong> Este é o último material do módulo. Após concluí-lo, você precisará realizar o quiz para poder avançar.
+          </div>
+        )}
       </div>
     );
   }
@@ -490,6 +749,13 @@ export default function CursoEstudante() {
           <i className="bi bi-folder text-muted" style={{ fontSize: '4rem' }}></i>
           <h4 className="mt-3 mb-2">Selecione um material</h4>
           <p className="text-muted">Escolha um material na barra lateral para visualizar</p>
+          {moduloAtual.quiz_id && !moduloAtual.quiz_aprovado && 
+           moduloAtual.materiais.every(m => m.concluido) && (
+            <div className="alert alert-warning mt-3">
+              <i className="bi bi-question-circle me-2"></i>
+              Todos os materiais concluídos! Agora realize o quiz para completar este módulo.
+            </div>
+          )}
         </div>
       );
     }
@@ -500,13 +766,16 @@ export default function CursoEstudante() {
           <i className="bi bi-check-circle text-success" style={{ fontSize: '4rem' }}></i>
           <h4 className="mt-3 mb-2">Todos os materiais concluídos!</h4>
           {moduloAtual.quiz_id && !moduloAtual.quiz_aprovado && (
-            <Link 
-              href={`/student/quiz/${moduloAtual.quiz_id}`}
-              className="btn btn-warning mt-2"
-            >
-              <i className="bi bi-question-circle me-2"></i>
-              Realizar Quiz
-            </Link>
+            <div className="text-center">
+              <p className="text-muted mb-3">Você precisa realizar o quiz para completar este módulo</p>
+              <Link 
+                href={`/student/quiz/${moduloAtual.quiz_id}`}
+                className="btn btn-warning btn-lg"
+              >
+                <i className="bi bi-question-circle me-2"></i>
+                Realizar Quiz
+              </Link>
+            </div>
           )}
         </div>
       );
@@ -520,6 +789,14 @@ export default function CursoEstudante() {
             <p className="text-muted mb-0">
               Módulo {moduloAtual.ordem}: {moduloAtual.titulo}
             </p>
+            {moduloAtual.quiz_id && !moduloAtual.quiz_aprovado && 
+             moduloAtual.materiais.filter(m => m.concluido).length === moduloAtual.materiais.length - 1 &&
+             !materialAtual.concluido && (
+              <small className="text-warning">
+                <i className="bi bi-exclamation-triangle me-1"></i>
+                Último material - Quiz obrigatório após conclusão
+              </small>
+            )}
           </div>
           
           {!materialAtual.concluido && (
@@ -546,13 +823,13 @@ export default function CursoEstudante() {
           {material.tipo === 'video' && material.url ? (
             <div className="ratio ratio-16x9 mb-4">
               <video 
-              controls 
-              controlsList="nodownload" 
-              className="w-100 rounded"
-              onContextMenu={(e) => e.preventDefault()}
-              disablePictureInPicture
-              disableRemotePlayback
-            >
+                controls 
+                controlsList="nodownload" 
+                className="w-100 rounded"
+                onContextMenu={(e) => e.preventDefault()}
+                disablePictureInPicture
+                disableRemotePlayback
+              >
                 <source src={material.url} type="video/mp4" />
                 Seu navegador não suporta vídeo HTML5.
               </video>
