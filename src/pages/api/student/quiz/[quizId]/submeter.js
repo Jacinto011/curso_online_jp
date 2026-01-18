@@ -1,4 +1,3 @@
-// src/pages/api/student/quiz/[quizId]/submeter.js
 import withCors from '../../../../../lib/cors';
 import { query } from '../../../../../lib/database-postgres';
 import { authenticate } from '../../../../../lib/auth';
@@ -34,7 +33,7 @@ async function handler(req, res) {
 
     // Verificar se a matrícula pertence ao usuário
     const matriculaResult = await query(`
-      SELECT id, curso_id FROM matriculas 
+      SELECT id, curso_id, status FROM matriculas 
       WHERE id = $1 AND estudante_id = $2
     `, [matricula_id, user.id]);
     
@@ -49,7 +48,9 @@ async function handler(req, res) {
 
     // Buscar dados do quiz
     const quizResult = await query(`
-      SELECT q.*, m.id as modulo_id
+      SELECT q.*, m.id as modulo_id, m.curso_id,
+             (SELECT MAX(ordem) FROM modulos WHERE curso_id = m.curso_id) as ultima_ordem_modulo,
+             m.ordem as ordem_modulo
       FROM quizzes q
       JOIN modulos m ON q.modulo_id = m.id
       WHERE q.id = $1
@@ -63,6 +64,7 @@ async function handler(req, res) {
     }
 
     const quiz = quizResult.rows[0];
+    const isLastQuizCourse = quiz.ordem_modulo === quiz.ultima_ordem_modulo;
 
     // Buscar respostas corretas para calcular pontuação
     const respostasCorretasResult = await query(`
@@ -150,16 +152,19 @@ async function handler(req, res) {
         `, [matricula_id, quiz.modulo_id]);
       }
 
-      // Verificar se todos os módulos do curso foram concluídos
-      const todosModulosConcluidos = await verificarConclusaoCurso(matricula_id, matricula.curso_id);
-      
-      if (todosModulosConcluidos) {
-        // Atualizar matrícula para concluída
-        await query(`
-          UPDATE matriculas 
-          SET status = 'concluida', data_conclusao = CURRENT_TIMESTAMP
-          WHERE id = $1
-        `, [matricula_id]);
+      // Se for o último quiz do curso, verificar se pode concluir curso
+      if (isLastQuizCourse && aprovado) {
+        const todosModulosConcluidos = await verificarConclusaoCurso(matricula_id, matricula.curso_id);
+        const todosQuizzesAprovados = await verificarTodosQuizzesAprovados(matricula_id, matricula.curso_id);
+        
+        if (todosModulosConcluidos && todosQuizzesAprovados) {
+          // Atualizar matrícula para concluída
+          await query(`
+            UPDATE matriculas 
+            SET status = 'concluida', data_conclusao = CURRENT_TIMESTAMP
+            WHERE id = $1
+          `, [matricula_id]);
+        }
       }
     }
 
@@ -172,9 +177,10 @@ async function handler(req, res) {
         acertos,
         total_perguntas: totalPerguntas,
         tentativas: tentativasAtuais,
+        ultimo_quiz_curso: isLastQuizCourse,
         mensagem: aprovado 
-          ? `🎉 Parabéns! Você foi aprovado com ${percentual}% e pode prosseguir para o próximo módulo!` 
-          : `❌ Você obteve ${percentual}%. Precisa de ${quiz.pontuacao_minima}% para aprovação. Tente novamente.`
+          ? `🎉 Parabéns! Você foi aprovado com ${percentual}%` 
+          : `❌ Você obteve ${percentual}%. Precisa de ${quiz.pontuacao_minima}% para aprovação.`
       }
     });
     
@@ -210,6 +216,41 @@ async function verificarConclusaoCurso(matriculaId, cursoId) {
     return concluidos === total;
   } catch (error) {
     console.error('Erro ao verificar conclusão do curso:', error);
+    return false;
+  }
+}
+
+async function verificarTodosQuizzesAprovados(matriculaId, cursoId) {
+  try {
+    const result = await query(`
+      WITH quizzes_curso AS (
+        SELECT q.id 
+        FROM quizzes q
+        JOIN modulos m ON q.modulo_id = m.id
+        WHERE m.curso_id = $1
+      ),
+      quizzes_aprovados AS (
+        SELECT COUNT(DISTINCT rq.quiz_id) as aprovados
+        FROM resultados_quiz rq
+        JOIN quizzes_curso qc ON rq.quiz_id = qc.id
+        WHERE rq.matricula_id = $2 AND rq.aprovado = true
+      ),
+      total_quizzes AS (
+        SELECT COUNT(*) as total FROM quizzes_curso
+      )
+      SELECT 
+        (SELECT total FROM total_quizzes) as total,
+        (SELECT aprovados FROM quizzes_aprovados) as aprovados
+    `, [cursoId, matriculaId]);
+
+    const { total, aprovados } = result.rows[0];
+    
+    // Se não há quizzes, retorna true
+    if (total === 0) return true;
+    
+    return total === aprovados;
+  } catch (error) {
+    console.error('Erro ao verificar quizzes aprovados:', error);
     return false;
   }
 }

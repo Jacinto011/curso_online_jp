@@ -1,4 +1,3 @@
-// api/student/progresso/registrar.js - VERSÃO FINAL COM LÓGICA MELHOR
 import withCors from '../../../../lib/cors';
 import { query } from '../../../../lib/database-postgres';
 import { authenticate } from '../../../../lib/auth';
@@ -36,10 +35,11 @@ async function handler(req, res) {
       });
     }
 
-    // Verificar se a matrícula pertence ao usuário
+    // VERIFICAÇÃO ATUALIZADA - Removida a coluna que não existe
     const matriculaResult = await query(`
       SELECT m.*, c.id as curso_id, c.titulo as curso_titulo, 
              u.nome as estudante_nome, c.instrutor_id
+             -- certificado_autoemitir removido por enquanto
       FROM matriculas m
       JOIN cursos c ON m.curso_id = c.id
       JOIN usuarios u ON m.estudante_id = u.id
@@ -55,7 +55,7 @@ async function handler(req, res) {
 
     const matricula = matriculaResult.rows[0];
 
-    // 1. PRIMEIRO: Verificar se é a última aula do módulo
+    // 1. Verificar se é a última aula do módulo
     const ultimaAulaInfo = await query(`
       WITH materiais_modulo AS (
         SELECT COUNT(*) as total FROM materiais WHERE modulo_id = $1
@@ -67,22 +67,19 @@ async function handler(req, res) {
           AND modulo_id = $1 
           AND material_id IS NOT NULL 
           AND concluido = true
-      ),
-      total_materiais AS (
-        SELECT COUNT(*) as total FROM materiais_modulo
       )
       SELECT 
-        (SELECT total FROM total_materiais) as total_materiais,
-        (SELECT concluidos FROM materiais_concluidos) as concluidos_antes
+        COALESCE((SELECT total FROM materiais_modulo), 0) as total_materiais,
+        COALESCE((SELECT concluidos FROM materiais_concluidos), 0) as concluidos_antes
     `, [modulo_id, matricula_id]);
 
     const { total_materiais, concluidos_antes } = ultimaAulaInfo.rows[0];
     
-    // Calcular se será a última aula (apenas se houver materiais)
+    // Calcular se será a última aula
     let seraUltimaAula = false;
     if (total_materiais > 0) {
-      const materiaisRestantes = total_materiais - concluidos_antes;
-      seraUltimaAula = materiaisRestantes === 1; // Se só falta este material
+      const materiaisRestantes = total_materiais - (concluidos_antes || 0);
+      seraUltimaAula = materiaisRestantes === 1;
     }
 
     // 2. Verificar se existe quiz para este módulo e se foi aprovado
@@ -90,21 +87,25 @@ async function handler(req, res) {
       SELECT q.id, 
              COALESCE(q.pontuacao_minima, 70) as pontuacao_minima,
              rq.pontuacao as nota_estudante,
-             rq.aprovado as quiz_aprovado
+             rq.aprovado as quiz_aprovado,
+             -- Verificar se é o último módulo do curso
+             (SELECT MAX(ordem) FROM modulos WHERE curso_id = $3) as ultima_ordem,
+             m.ordem as ordem_atual
       FROM modulos m
       LEFT JOIN quizzes q ON m.id = q.modulo_id
       LEFT JOIN resultados_quiz rq ON q.id = rq.quiz_id AND rq.matricula_id = $1
       WHERE m.id = $2
       ORDER BY rq.data_realizacao DESC
       LIMIT 1
-    `, [matricula_id, modulo_id]);
+    `, [matricula_id, modulo_id, matricula.curso_id]);
 
     const hasQuiz = quizInfo.rows[0]?.id;
     const quizApproved = quizInfo.rows[0]?.quiz_aprovado === true;
     const quizScore = quizInfo.rows[0]?.nota_estudante;
     const minScore = quizInfo.rows[0]?.pontuacao_minima || 70;
+    const isLastQuizCourse = quizInfo.rows[0]?.ordem_atual === quizInfo.rows[0]?.ultima_ordem;
 
-    // Verificar aprovação por pontuação (se não tiver flag aprovado)
+    // Verificar aprovação
     let isQuizApproved = false;
     if (hasQuiz) {
       if (quizApproved) {
@@ -114,8 +115,7 @@ async function handler(req, res) {
       }
     }
 
-    // 3. Registrar progresso do material SEMPRE (mesmo se houver quiz pendente)
-    // O usuário pode concluir o material, mas não o módulo
+    // 3. Registrar progresso do material
     if (material_id) {
       const existingMaterial = await query(`
         SELECT id FROM progresso 
@@ -153,7 +153,7 @@ async function handler(req, res) {
       });
     }
     
-    // SE FOR A ÚLTIMA AULA E TEM QUIZ NÃO APROVADO: avisar sobre o quiz
+    // SE FOR A ÚLTIMA AULA E TEM QUIZ NÃO APROVADO
     if (seraUltimaAula && hasQuiz && !isQuizApproved) {
       return res.status(200).json({
         success: true,
@@ -163,11 +163,12 @@ async function handler(req, res) {
         hasQuiz: true,
         quizId: quizInfo.rows[0].id,
         needQuiz: true,
-        isLastMaterial: true
+        isLastMaterial: true,
+        isLastQuizCourse: isLastQuizCourse
       });
     }
 
-    // SE FOR A ÚLTIMA AULA E (NÃO TEM QUIZ OU QUIZ APROVADO): concluir módulo
+    // SE FOR A ÚLTIMA AULA E (NÃO TEM QUIZ OU QUIZ APROVADO)
     if (seraUltimaAula && (!hasQuiz || isQuizApproved)) {
       // Registrar módulo como concluído
       const existingModulo = await query(`
@@ -198,43 +199,22 @@ async function handler(req, res) {
       const todosModulosConcluidos = await verificarConclusaoCurso(matricula_id, matricula.curso_id);
       
       if (todosModulosConcluidos) {
-        // Verificar se último módulo tem quiz não aprovado
-        const lastModuloQuiz = await query(`
-          SELECT q.id, 
-                 COALESCE(q.pontuacao_minima, 70) as pontuacao_minima,
-                 rq.pontuacao as nota_estudante,
-                 rq.aprovado as quiz_aprovado
-          FROM modulos m
-          LEFT JOIN quizzes q ON m.id = q.modulo_id
-          LEFT JOIN resultados_quiz rq ON q.id = rq.quiz_id AND rq.matricula_id = $1
-          WHERE m.curso_id = $2
-          ORDER BY m.ordem DESC, rq.data_realizacao DESC
-          LIMIT 1
-        `, [matricula_id, matricula.curso_id]);
-
-        const lastModuloHasQuiz = lastModuloQuiz.rows[0]?.id;
-        const lastModuloQuizApproved = lastModuloQuiz.rows[0]?.quiz_aprovado === true;
-        const lastModuloScore = lastModuloQuiz.rows[0]?.nota_estudante;
-        const lastModuloMinScore = lastModuloQuiz.rows[0]?.pontuacao_minima || 70;
-        const lastModuloScoreApproved = lastModuloScore && lastModuloScore >= lastModuloMinScore;
+        // Verificar se todos os quizzes foram aprovados
+        const todosQuizzesAprovados = await verificarTodosQuizzesAprovados(matricula_id, matricula.curso_id);
         
-        const isLastModuloQuizApproved = lastModuloQuizApproved || lastModuloScoreApproved;
-
-        // Se último módulo tem quiz e não foi aprovado, não concluir curso
-        if (lastModuloHasQuiz && !isLastModuloQuizApproved) {
+        if (!todosQuizzesAprovados) {
           return res.status(200).json({
             success: true,
-            message: 'Módulo concluído! Complete o quiz do último módulo para finalizar o curso.',
+            message: 'Módulo concluído! Complete todos os quizzes para finalizar o curso.',
             moduloConcluido: true,
             cursoConcluido: false,
-            hasQuizInLastModule: true,
             needQuiz: true,
-            quizId: lastModuloQuiz.rows[0].id,
-            isLastMaterial: true
+            isLastMaterial: true,
+            todosQuizzesAprovados: false
           });
         }
 
-        // Concluir curso e gerar certificado
+        // Concluir curso
         await query(
           `UPDATE matriculas 
            SET status = 'concluida', data_conclusao = CURRENT_TIMESTAMP
@@ -242,20 +222,15 @@ async function handler(req, res) {
           [matricula_id]
         );
 
-        // GERAR CERTIFICADO
+        // SEMPRE tentar gerar certificado quando curso for concluído
+        let certificadoGerado = false;
+        let certificadoUrl = null;
+        
         try {
-          const certificadoGerado = await gerarCertificado(matricula);
-          
-          if (certificadoGerado.success) {
-            return res.status(200).json({
-              success: true,
-              message: 'Parabéns! Você concluiu o curso e seu certificado foi gerado!',
-              cursoConcluido: true,
-              moduloConcluido: true,
-              certificadoGerado: true,
-              certificadoUrl: certificadoGerado.url,
-              isLastMaterial: true
-            });
+          const certificadoResult = await gerarCertificado(matricula);
+          if (certificadoResult.success) {
+            certificadoGerado = true;
+            certificadoUrl = certificadoResult.url;
           }
         } catch (certError) {
           console.error('Erro ao gerar certificado:', certError);
@@ -263,11 +238,15 @@ async function handler(req, res) {
 
         return res.status(200).json({
           success: true,
-          message: 'Parabéns! Você concluiu o curso!',
+          message: certificadoGerado 
+            ? 'Parabéns! Você concluiu o curso e seu certificado foi gerado!' 
+            : 'Parabéns! Você concluiu o curso!',
           cursoConcluido: true,
           moduloConcluido: true,
-          certificadoGerado: false,
-          isLastMaterial: true
+          certificadoGerado: certificadoGerado,
+          certificadoUrl: certificadoUrl,
+          isLastMaterial: true,
+          todosQuizzesAprovados: true
         });
       }
 
@@ -280,7 +259,6 @@ async function handler(req, res) {
       });
     }
 
-    // Caso padrão (não deveria chegar aqui)
     return res.status(200).json({
       success: true,
       message: 'Progresso registrado com sucesso',
@@ -299,10 +277,10 @@ async function handler(req, res) {
   }
 }
 
-// ... (mantenha as funções auxiliares)
-// Funções auxiliares (mantenha as mesmas)
+// Funções auxiliares atualizadas
 async function gerarCertificado(matricula) {
   try {
+    // Buscar instrutor
     const instrutorResult = await query(`
       SELECT u.nome as instrutor_nome, u.email as instrutor_email
       FROM usuarios u
@@ -314,6 +292,7 @@ async function gerarCertificado(matricula) {
       instrutor_email: '' 
     };
 
+    // Gerar código único
     const codigoVerificacao = `CERT-${matricula.curso_id}-${matricula.id}-${Date.now()}`.toUpperCase();
     
     const certificadoData = {
@@ -322,18 +301,21 @@ async function gerarCertificado(matricula) {
       instrutorNome: instrutor.instrutor_nome,
       dataConclusao: new Date().toLocaleDateString('pt-BR'),
       dataEmissao: new Date().toLocaleDateString('pt-BR'),
-      codigoVerificacao: codigoVerificacao
+      codigoVerificacao: codigoVerificacao,
+      horasCargaHoraria: '40 horas'
     };
 
+    // Gerar PDF do certificado
     const pdfBuffer = await generateCertificate(certificadoData);
     
+    // Upload para storage
     const uploadResult = await storageService.uploadFile(
       pdfBuffer,
-      `certificado-${matricula.id}-${Date.now()}.pdf`,
-      'application/pdf',
-      'certificados'
+      `certificados/certificado-${matricula.id}-${Date.now()}.pdf`,
+      'application/pdf'
     );
 
+    // Salvar no banco de dados
     await query(`
       INSERT INTO certificados 
         (matricula_id, curso_id, codigo_verificacao, url_pdf, data_emissao)
@@ -343,6 +325,13 @@ async function gerarCertificado(matricula) {
         url_pdf = EXCLUDED.url_pdf,
         data_emissao = CURRENT_TIMESTAMP
     `, [matricula.id, matricula.curso_id, codigoVerificacao, uploadResult.url]);
+
+    // Atualizar matrícula com URL do certificado
+    await query(`
+      UPDATE matriculas 
+      SET certificado_url = $1
+      WHERE id = $2
+    `, [uploadResult.url, matricula.id]);
 
     return {
       success: true,
@@ -394,12 +383,42 @@ async function verificarConclusaoCurso(matriculaId, cursoId) {
         AND material_id IS NULL
     )
     SELECT 
-      (SELECT total FROM modulos_curso) as total,
-      (SELECT concluidos FROM modulos_concluidos) as concluidos
+      COALESCE((SELECT total FROM modulos_curso), 0) as total,
+      COALESCE((SELECT concluidos FROM modulos_concluidos), 0) as concluidos
   `, [cursoId, matriculaId]);
 
   const { total, concluidos } = result.rows[0];
   return concluidos === total;
+}
+
+async function verificarTodosQuizzesAprovados(matriculaId, cursoId) {
+  const result = await query(`
+    WITH quizzes_curso AS (
+      SELECT q.id 
+      FROM quizzes q
+      JOIN modulos m ON q.modulo_id = m.id
+      WHERE m.curso_id = $1
+    ),
+    quizzes_aprovados AS (
+      SELECT COUNT(DISTINCT rq.quiz_id) as aprovados
+      FROM resultados_quiz rq
+      JOIN quizzes_curso qc ON rq.quiz_id = qc.id
+      WHERE rq.matricula_id = $2 AND rq.aprovado = true
+    ),
+    total_quizzes AS (
+      SELECT COUNT(*) as total FROM quizzes_curso
+    )
+    SELECT 
+      COALESCE((SELECT total FROM total_quizzes), 0) as total,
+      COALESCE((SELECT aprovados FROM quizzes_aprovados), 0) as aprovados
+  `, [cursoId, matriculaId]);
+
+  const { total, aprovados } = result.rows[0];
+  
+  // Se não há quizzes, retorna true
+  if (total === 0) return true;
+  
+  return total === aprovados;
 }
 
 export default withCors(handler);

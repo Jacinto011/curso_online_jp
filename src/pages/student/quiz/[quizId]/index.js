@@ -1,4 +1,3 @@
-// pages/student/quiz/[id].js - COM CORREÇÃO DO handleIniciarQuiz
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../../context/AuthContext';
 import { useRouter } from 'next/router';
@@ -9,7 +8,6 @@ export default function QuizPage() {
   const { isStudent, user } = useAuth();
   const router = useRouter();
   const { quizId } = router.query;
-  console.log(router.query.quizId);
   
   const [quizData, setQuizData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -19,13 +17,57 @@ export default function QuizPage() {
   const [tempoRestante, setTempoRestante] = useState(null);
   const [iniciado, setIniciado] = useState(false);
   const [timerInterval, setTimerInterval] = useState(null);
+  const [ultimaTentativa, setUltimaTentativa] = useState(null);
 
   useEffect(() => {
     if (!isStudent || !quizId) return;
     fetchQuiz();
   }, [isStudent, quizId]);
 
-  // Adicionar esta função que estava faltando
+  // Limpar intervalo ao desmontar o componente
+  useEffect(() => {
+    return () => {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
+    };
+  }, [timerInterval]);
+
+  const fetchQuiz = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/student/quiz/${quizId}/iniciar`);
+      
+      if (response.data.success) {
+        setQuizData(response.data.data);
+        setUltimaTentativa(response.data.data.ultima_tentativa || null);
+        
+        // Inicializar objeto de respostas
+        const respostasIniciais = {};
+        response.data.data.perguntas?.forEach(pergunta => {
+          respostasIniciais[pergunta.id] = null;
+        });
+        setRespostas(respostasIniciais);
+        
+      } else {
+        alert(response.data.message);
+        router.back();
+      }
+      
+    } catch (error) {
+      console.error('Erro ao carregar quiz:', error);
+      if (error.response?.status === 403 || error.response?.status === 400) {
+        alert(error.response.data.message || 'Não autorizado para realizar este quiz');
+        router.back();
+      } else {
+        alert('Erro ao carregar quiz. Tente novamente.');
+        router.push('/student/cursos');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleIniciarQuiz = () => {
     setIniciado(true);
     
@@ -55,49 +97,6 @@ export default function QuizPage() {
     handleSubmeterQuiz();
   };
 
-  // Limpar intervalo ao desmontar o componente
-  useEffect(() => {
-    return () => {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-      }
-    };
-  }, [timerInterval]);
-
-  const fetchQuiz = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get(`/student/quiz/${quizId}/iniciar`);
-      
-      if (response.data.success) {
-        setQuizData(response.data.data);
-        
-        // Inicializar objeto de respostas
-        const respostasIniciais = {};
-        response.data.data.perguntas.forEach(pergunta => {
-          respostasIniciais[pergunta.id] = null;
-        });
-        setRespostas(respostasIniciais);
-        
-      } else {
-        alert(response.data.message);
-        router.back();
-      }
-      
-    } catch (error) {
-      console.error('Erro ao carregar quiz:', error);
-      if (error.response?.status === 403 || error.response?.status === 400) {
-        alert(error.response.data.message || 'Não autorizado para realizar este quiz');
-        router.back();
-      } else {
-        alert('Erro ao carregar quiz. Tente novamente.');
-        router.push('/student/cursos');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRespostaChange = (perguntaId, opcaoId) => {
     setRespostas(prev => ({
       ...prev,
@@ -116,7 +115,7 @@ export default function QuizPage() {
     
     // Verificar se todas as perguntas foram respondidas
     const perguntasRespondidas = Object.values(respostas).filter(r => r !== null).length;
-    const totalPerguntas = quizData.perguntas.length;
+    const totalPerguntas = quizData.perguntas?.length || 0;
     
     if (perguntasRespondidas < totalPerguntas) {
       const confirmar = window.confirm(
@@ -143,6 +142,16 @@ export default function QuizPage() {
 
       if (response.data.success) {
         setResultado(response.data.data);
+        
+        // Se aprovado no último quiz do curso, verificar certificado
+        if (response.data.data.aprovado && response.data.data.ultimo_quiz_curso) {
+          // Verificar se deve gerar certificado
+          setTimeout(() => {
+            if (confirm('Parabéns! Você completou todos os quizzes do curso. Deseja verificar se há certificado disponível?')) {
+              verificarCertificadoDoCurso();
+            }
+          }, 1000);
+        }
       } else {
         alert(response.data.message);
       }
@@ -152,6 +161,25 @@ export default function QuizPage() {
       alert(error.response?.data?.message || 'Erro ao submeter quiz. Tente novamente.');
     } finally {
       setSubmetendo(false);
+    }
+  };
+
+  const verificarCertificadoDoCurso = async () => {
+    try {
+      const response = await api.post('/student/certificado/verificar-emitir', {
+        matricula_id: quizData.quiz.matricula_id
+      });
+      
+      if (response.data.success && response.data.certificadoGerado) {
+        if (confirm('Certificado gerado com sucesso! Deseja visualizar agora?')) {
+          window.open(response.data.certificadoUrl, '_blank');
+        }
+      } else {
+        alert(response.data.message || 'Ainda não é possível gerar o certificado.');
+      }
+    } catch (error) {
+      console.error('Erro ao verificar certificado:', error);
+      alert('Erro ao verificar certificado.');
     }
   };
 
@@ -200,6 +228,12 @@ export default function QuizPage() {
                     <p className="mb-2">
                       <strong>Pontuação Mínima:</strong> {resultado.pontuacao_minima}%
                     </p>
+                    <p className="mb-2">
+                      <strong>Acertos:</strong> {resultado.acertos}/{resultado.total_perguntas}
+                    </p>
+                    <p className="mb-2">
+                      <strong>Tentativas:</strong> {resultado.tentativas}
+                    </p>
                     <p className="mb-0">
                       <strong>Status:</strong> 
                       <span className={`badge ms-2 ${resultado.aprovado ? 'bg-success' : 'bg-danger'}`}>
@@ -219,12 +253,21 @@ export default function QuizPage() {
                         <i className="bi bi-arrow-right-circle me-2"></i>
                         Continuar para Próximo Módulo
                       </Link>
+                      {resultado.ultimo_quiz_curso && (
+                        <button 
+                          className="btn btn-warning"
+                          onClick={verificarCertificadoDoCurso}
+                        >
+                          <i className="bi bi-award me-2"></i>
+                          Verificar Certificado
+                        </button>
+                      )}
                       <Link 
                         href="/student/certificados"
                         className="btn btn-outline-success"
                       >
                         <i className="bi bi-award me-2"></i>
-                        Ver Certificados
+                        Meus Certificados
                       </Link>
                     </>
                   ) : (
@@ -234,11 +277,11 @@ export default function QuizPage() {
                         onClick={() => {
                           setResultado(null);
                           setRespostas({});
-                          setIniciado(false); // Voltar para tela de instruções
+                          setIniciado(false);
                           
                           // Re-inicializar respostas
                           const respostasIniciais = {};
-                          quizData.perguntas.forEach(pergunta => {
+                          quizData.perguntas?.forEach(pergunta => {
                             respostasIniciais[pergunta.id] = null;
                           });
                           setRespostas(respostasIniciais);
@@ -287,12 +330,15 @@ export default function QuizPage() {
                   <div className="card-body">
                     <h5>Informações Importantes:</h5>
                     <ul className="mb-0">
-                      <li>Total de Perguntas: <strong>{quizData.perguntas.length}</strong></li>
+                      <li>Total de Perguntas: <strong>{quizData.perguntas?.length || 0}</strong></li>
                       <li>Pontuação Mínima: <strong>{quizData.quiz.pontuacao_minima}%</strong></li>
                       {quizData.quiz.tempo_limite && (
                         <li>Tempo Limite: <strong>{quizData.quiz.tempo_limite} minutos</strong></li>
                       )}
                       <li>Tipo: <strong>Múltipla Escolha</strong></li>
+                      {ultimaTentativa && (
+                        <li>Última Tentativa: <strong>{ultimaTentativa.pontuacao}%</strong></li>
+                      )}
                     </ul>
                   </div>
                 </div>
@@ -304,13 +350,16 @@ export default function QuizPage() {
                     <li>Você precisa de {quizData.quiz.pontuacao_minima}% para aprovação</li>
                     <li>Somente após aprovação você poderá acessar o próximo módulo</li>
                     <li>Você pode tentar novamente se não for aprovado</li>
+                    {quizData.quiz.ultimo_quiz_curso && (
+                      <li><strong>Este é o quiz do último módulo!</strong> Aprovação aqui pode gerar certificado.</li>
+                    )}
                   </ul>
                 </div>
                 
                 <div className="d-grid">
                   <button 
                     className="btn btn-success btn-lg"
-                    onClick={handleIniciarQuiz}  
+                    onClick={handleIniciarQuiz}
                   >
                     <i className="bi bi-play-circle me-2"></i>
                     Iniciar Quiz
@@ -331,19 +380,25 @@ export default function QuizPage() {
           {/* Cabeçalho com Timer */}
           <div className="card mb-4">
             <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
+              <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
                 <div>
                   <h4 className="mb-1">{quizData.quiz.titulo}</h4>
                   <p className="text-muted mb-0">
                     Curso: {quizData.quiz.curso_titulo}
                   </p>
+                  {quizData.quiz.ultimo_quiz_curso && (
+                    <small className="text-warning">
+                      <i className="bi bi-star me-1"></i>
+                      Último quiz do curso
+                    </small>
+                  )}
                 </div>
                 
-                <div className="d-flex align-items-center">
-                  <div className="me-4">
+                <div className="d-flex flex-column flex-md-row align-items-center mt-2 mt-md-0">
+                  <div className="me-md-4 mb-2 mb-md-0">
                     <small className="text-muted d-block">Progresso</small>
                     <small>
-                      {Object.values(respostas).filter(r => r !== null).length} de {quizData.perguntas.length} respondidas
+                      {Object.values(respostas).filter(r => r !== null).length} de {quizData.perguntas?.length || 0} respondidas
                     </small>
                   </div>
                   
@@ -361,7 +416,7 @@ export default function QuizPage() {
           {/* Perguntas */}
           <div className="row">
             <div className="col-lg-8">
-              {quizData.perguntas.map((pergunta, index) => (
+              {quizData.perguntas?.map((pergunta, index) => (
                 <div key={pergunta.id} className="card mb-4" id={`pergunta-${index}`}>
                   <div className="card-header">
                     <h5 className="mb-0">
@@ -375,7 +430,7 @@ export default function QuizPage() {
                     <p className="lead mb-4">{pergunta.enunciado}</p>
                     
                     <div className="list-group">
-                      {pergunta.opcoes.map(opcao => (
+                      {pergunta.opcoes?.map(opcao => (
                         <button
                           key={opcao.id}
                           className={`list-group-item list-group-item-action text-start ${
@@ -398,7 +453,11 @@ export default function QuizPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+              )) || (
+                <div className="alert alert-danger">
+                  Nenhuma pergunta disponível para este quiz.
+                </div>
+              )}
             </div>
             
             {/* Sidebar com Sumário */}
@@ -409,7 +468,7 @@ export default function QuizPage() {
                 </div>
                 <div className="card-body">
                   <div className="row row-cols-4 g-2 mb-4">
-                    {quizData.perguntas.map((pergunta, index) => (
+                    {quizData.perguntas?.map((pergunta, index) => (
                       <div key={pergunta.id} className="col">
                         <button
                           className={`btn btn-sm w-100 ${
