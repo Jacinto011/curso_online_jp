@@ -322,7 +322,7 @@ export default function CursoEstudante() {
     
     try {
       setVerificandoCertificado(true);
-      const response = await api.post('/student/certificado/gerar', {
+      const response = await api.post('/student/certificado/verificar-emitir', {
         matricula_id: cursoData.matricula.id
       });
       

@@ -4,21 +4,21 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../../context/AuthContext';
 
 const Header = () => {
-    const { 
-        user, 
-        logout, 
+    const {
+        user,
+        logout,
         isAuthenticated,
         notificacoes = [],
         notificacoesNaoLidas = 0,
-        marcarComoLida = () => {},
-        marcarTodasComoLidas = () => {}
+        marcarComoLida = () => { },
+        marcarTodasComoLidas = () => { }
     } = useAuth();
     const router = useRouter();
-    
+
     // Estados para controlar dropdowns
     const [showProfileDropdown, setShowProfileDropdown] = useState(false);
     const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
-    
+
     // Refs para detectar cliques fora dos dropdowns
     const profileDropdownRef = useRef(null);
     const notificationsDropdownRef = useRef(null);
@@ -31,15 +31,15 @@ const Header = () => {
     // Atualizar posição dos dropdowns em telas pequenas
     const updateDropdownPosition = (toggleRef) => {
         if (!toggleRef.current) return {};
-        
+
         const toggleRect = toggleRef.current.getBoundingClientRect();
         const windowWidth = window.innerWidth;
-        
+
         // Se estiver perto da borda direita em telas pequenas, ajustar posição
         if (windowWidth < 768 && toggleRect.right > windowWidth - 300) {
             return { right: 0 };
         }
-        
+
         return {};
     };
 
@@ -47,16 +47,16 @@ const Header = () => {
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (
-                profileDropdownRef.current && 
+                profileDropdownRef.current &&
                 !profileDropdownRef.current.contains(event.target) &&
                 profileToggleRef.current &&
                 !profileToggleRef.current.contains(event.target)
             ) {
                 setShowProfileDropdown(false);
             }
-            
+
             if (
-                notificationsDropdownRef.current && 
+                notificationsDropdownRef.current &&
                 !notificationsDropdownRef.current.contains(event.target) &&
                 notificationsToggleRef.current &&
                 !notificationsToggleRef.current.contains(event.target)
@@ -99,7 +99,7 @@ const Header = () => {
     const formatarDataResumida = (dataString) => {
         const data = new Date(dataString);
         const hoje = new Date();
-        
+
         if (data.toDateString() === hoje.toDateString()) {
             return data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         } else {
@@ -121,7 +121,7 @@ const Header = () => {
 
     // Função para determinar cor do badge baseado no role
     const getRoleBadgeColor = (role) => {
-        switch(role) {
+        switch (role) {
             case 'admin': return 'bg-danger';
             case 'instructor': return 'bg-warning text-dark';
             case 'student': return 'bg-success';
@@ -131,7 +131,7 @@ const Header = () => {
 
     // Função para determinar texto do role
     const getRoleText = (role) => {
-        switch(role) {
+        switch (role) {
             case 'admin': return 'Administrador';
             case 'instructor': return 'Instrutor';
             case 'student': return 'Estudante';
@@ -172,7 +172,7 @@ const Header = () => {
                                     <span className="d-none d-md-inline">Cursos</span>
                                 </Link>
                             </li>
-                            
+
 
                             {isAuthenticated && user?.role === 'student' && (
                                 <>
@@ -186,6 +186,12 @@ const Header = () => {
                                         <Link href="/student/cursos" className="nav-link">
                                             <i className="bi bi-journal me-1"></i>
                                             <span className="d-none d-md-inline">Meus Cursos</span>
+                                        </Link>
+                                    </li>
+                                    <li className="nav-item">
+                                        <Link href="/student/pagamentos" className="nav-link">
+                                            <i className="bi bi-credit-card me-1"></i>
+                                            <span className="d-none d-md-inline">Pagamentos</span>
                                         </Link>
                                     </li>
                                 </>
@@ -203,6 +209,12 @@ const Header = () => {
                                         <Link href="/instructor/cursos" className="nav-link">
                                             <i className="bi bi-journal me-1"></i>
                                             <span className="d-none d-md-inline">Meus Cursos</span>
+                                        </Link>
+                                    </li>
+                                    <li className="nav-item">
+                                        <Link href="/instructor/pagamentos" className="nav-link">
+                                            <i className="bi bi-credit-card me-1"></i>
+                                            <span className="d-none d-md-inline">Pagamentos</span>
                                         </Link>
                                     </li>
                                 </>
@@ -231,6 +243,12 @@ const Header = () => {
                                             <Link href="/admin/cursos" className="dropdown-item">
                                                 <i className="bi bi-book me-2"></i>
                                                 Cursos
+                                            </Link>
+                                        </li>
+                                        <li className="nav-item">
+                                            <Link href="/admin/pagamentos" className="dropdown-item">
+                                                <i className="bi bi-credit-card me-1"></i>
+                                                <span className="d-none d-md-inline">Pagamentos & Auditoria</span>
                                             </Link>
                                         </li>
                                     </ul>
@@ -272,10 +290,10 @@ const Header = () => {
                                             )}
                                         </i>
                                     </a>
-                                    <ul 
+                                    <ul
                                         className={`dropdown-menu dropdown-menu-end ${showNotificationsDropdown ? 'show' : ''}`}
-                                        style={{ 
-                                            minWidth: '320px', 
+                                        style={{
+                                            minWidth: '320px',
                                             maxWidth: 'min(400px, calc(100vw - 40px))',
                                             maxHeight: '80vh',
                                             overflowY: 'auto',
@@ -290,7 +308,7 @@ const Header = () => {
                                             <div className="dropdown-header d-flex justify-content-between align-items-center sticky-top bg-white py-3">
                                                 <span className="fw-bold">Notificações</span>
                                                 {notificacoesNaoLidas > 0 && (
-                                                    <button 
+                                                    <button
                                                         className="btn btn-sm btn-outline-primary"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -357,8 +375,8 @@ const Header = () => {
                                                     <hr className="dropdown-divider my-1" />
                                                 </li>
                                                 <li>
-                                                    <Link 
-                                                        href="/notificacoes" 
+                                                    <Link
+                                                        href="/notificacoes"
                                                         className="dropdown-item text-center text-primary fw-medium py-2"
                                                         onClick={() => setShowNotificationsDropdown(false)}
                                                     >
@@ -371,7 +389,7 @@ const Header = () => {
                                     </ul>
                                 </li>
                             )}
-                            
+
                             {/* Dropdown do Perfil */}
                             {isAuthenticated ? (
                                 <li className="nav-item dropdown ms-2" ref={profileDropdownRef}>
@@ -389,10 +407,10 @@ const Header = () => {
                                     >
                                         {/* Avatar do usuário */}
                                         <div className="position-relative">
-                                            <div 
+                                            <div
                                                 className="rounded-circle bg-primary d-flex align-items-center justify-content-center text-white"
-                                                style={{ 
-                                                    width: '36px', 
+                                                style={{
+                                                    width: '36px',
                                                     height: '36px',
                                                     fontSize: '14px',
                                                     fontWeight: 'bold'
@@ -405,16 +423,16 @@ const Header = () => {
                                                 <span className="visually-hidden">Online</span>
                                             </span>
                                         </div>
-                                        
+
                                         {/* Nome do usuário (visível apenas em desktop) */}
                                         <span className="d-none d-lg-inline ms-2">
                                             {user?.nome?.split(' ')[0] || 'Usuário'}
                                         </span>
                                     </a>
-                                    
-                                    <ul 
+
+                                    <ul
                                         className={`dropdown-menu dropdown-menu-end shadow ${showProfileDropdown ? 'show' : ''}`}
-                                        style={{ 
+                                        style={{
                                             minWidth: '280px',
                                             maxWidth: 'min(320px, calc(100vw - 40px))',
                                             ...dropdownPosition,
@@ -428,10 +446,10 @@ const Header = () => {
                                         <li>
                                             <div className="dropdown-header">
                                                 <div className="d-flex align-items-center">
-                                                    <div 
+                                                    <div
                                                         className="rounded-circle bg-primary d-flex align-items-center justify-content-center text-white me-3"
-                                                        style={{ 
-                                                            width: '48px', 
+                                                        style={{
+                                                            width: '48px',
                                                             height: '48px',
                                                             fontSize: '18px',
                                                             fontWeight: 'bold'
@@ -451,13 +469,13 @@ const Header = () => {
                                                 </div>
                                             </div>
                                         </li>
-                                        
+
                                         <li><hr className="dropdown-divider" /></li>
-                                        
+
                                         {/* Menu do Perfil */}
                                         <li>
-                                            <Link 
-                                                href="/auth/perfil" 
+                                            <Link
+                                                href="/auth/perfil"
                                                 className="dropdown-item py-2"
                                                 onClick={() => setShowProfileDropdown(false)}
                                             >
@@ -465,10 +483,10 @@ const Header = () => {
                                                 Meu Perfil
                                             </Link>
                                         </li>
-                                        
+
                                         <li>
-                                            <Link 
-                                                href="/termos" 
+                                            <Link
+                                                href="/termos"
                                                 className="dropdown-item py-2"
                                                 onClick={() => setShowProfileDropdown(false)}
                                             >
@@ -477,12 +495,12 @@ const Header = () => {
                                             </Link>
                                         </li>
 
-                                        
+
                                         {user?.role === 'student' && (
                                             <>
                                                 <li>
-                                                    <Link 
-                                                        href="/student/cursos" 
+                                                    <Link
+                                                        href="/student/cursos"
                                                         className="dropdown-item py-2"
                                                         onClick={() => setShowProfileDropdown(false)}
                                                     >
@@ -491,8 +509,8 @@ const Header = () => {
                                                     </Link>
                                                 </li>
                                                 <li>
-                                                    <Link 
-                                                        href="/student/certificados" 
+                                                    <Link
+                                                        href="/student/certificados"
                                                         className="dropdown-item py-2"
                                                         onClick={() => setShowProfileDropdown(false)}
                                                     >
@@ -502,12 +520,12 @@ const Header = () => {
                                                 </li>
                                             </>
                                         )}
-                                        
+
                                         {user?.role === 'instructor' && (
                                             <>
                                                 <li>
-                                                    <Link 
-                                                        href="/instructor/cursos" 
+                                                    <Link
+                                                        href="/instructor/cursos"
                                                         className="dropdown-item py-2"
                                                         onClick={() => setShowProfileDropdown(false)}
                                                     >
@@ -516,8 +534,8 @@ const Header = () => {
                                                     </Link>
                                                 </li>
                                                 <li>
-                                                    <Link 
-                                                        href="/instructor/estatisticas" 
+                                                    <Link
+                                                        href="/instructor/estatisticas"
                                                         className="dropdown-item py-2"
                                                         onClick={() => setShowProfileDropdown(false)}
                                                     >
@@ -527,11 +545,11 @@ const Header = () => {
                                                 </li>
                                             </>
                                         )}
-                                        
+
                                         {user?.role === 'admin' && (
                                             <li>
-                                                <Link 
-                                                    href="/admin" 
+                                                <Link
+                                                    href="/admin"
                                                     className="dropdown-item py-2"
                                                     onClick={() => setShowProfileDropdown(false)}
                                                 >
@@ -540,10 +558,10 @@ const Header = () => {
                                                 </Link>
                                             </li>
                                         )}
-                                        
+
                                         <li>
-                                            <Link 
-                                                href="/ajuda" 
+                                            <Link
+                                                href="/ajuda"
                                                 className="dropdown-item py-2"
                                                 onClick={() => setShowProfileDropdown(false)}
                                             >
@@ -551,9 +569,9 @@ const Header = () => {
                                                 Ajuda & Suporte
                                             </Link>
                                         </li>
-                                        
+
                                         <li><hr className="dropdown-divider" /></li>
-                                        
+
                                         <li>
                                             <button
                                                 onClick={() => {

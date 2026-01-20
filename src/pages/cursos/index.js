@@ -2,8 +2,56 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import api from '../../lib/api';
 
+// Lista de categorias atualizada
+const categorias = [
+  'Programação',
+  'Design',
+  'Marketing',
+  'Negócios',
+  'TI e Software',
+  'Desenvolvimento Pessoal',
+  'Finanças',
+  'Saúde e Fitness',
+  'Música',
+  'Fotografia',
+  'Idiomas',
+  'Outro'
+];
+
+// Note: A API retorna "Programacao" sem acento e "Desenvolvimento Pessoal" com acento
+// Vamos criar um mapeamento para padronizar
+const mapeamentoCategoriasAPI = {
+  'Programacao': 'Programação',
+  'Programação': 'Programação',
+  'Design': 'Design',
+  'Marketing': 'Marketing',
+  'Negócios': 'Negócios',
+  'TI e Software': 'TI e Software',
+  'Desenvolvimento Pessoal': 'Desenvolvimento Pessoal',
+  'Finanças': 'Finanças',
+  'Saúde e Fitness': 'Saúde e Fitness',
+  'Música': 'Música',
+  'Fotografia': 'Fotografia',
+  'Idiomas': 'Idiomas',
+  'Outro': 'Outro'
+};
+
+// Normalizar categoria da API para o formato padrão
+const normalizarCategoria = (categoriaAPI) => {
+  if (!categoriaAPI) return '';
+  
+  // Verifica se já está no formato correto
+  if (categorias.includes(categoriaAPI)) {
+    return categoriaAPI;
+  }
+  
+  // Tenta mapear
+  return mapeamentoCategoriasAPI[categoriaAPI] || categoriaAPI;
+};
+
 export default function CatalogoCursos() {
   const [cursos, setCursos] = useState([]);
+  const [todosCursos, setTodosCursos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtros, setFiltros] = useState({
     categoria: '',
@@ -12,25 +60,71 @@ export default function CatalogoCursos() {
     search: ''
   });
 
+  // Carregar todos os cursos para contagem
   useEffect(() => {
-    fetchCursos();
+    fetchTodosCursos();
+  }, []);
+
+  // Carregar cursos filtrados
+  useEffect(() => {
+    fetchCursosFiltrados();
   }, [filtros.categoria, filtros.nivel, filtros.preco]);
 
-  const fetchCursos = async () => {
+  const fetchTodosCursos = async () => {
+    try {
+      const response = await api.get('/cursos?status=publicado');
+      setTodosCursos(response.data.cursos || []);
+    } catch (error) {
+      console.error('Erro ao carregar todos os cursos:', error);
+    }
+  };
+
+  const fetchCursosFiltrados = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        status: 'publicado',
+      
+      // Construir parâmetros de filtro
+      const params = new URLSearchParams();
+      params.append('status', 'publicado');
+      
+      // IMPORTANTE: Enviar a categoria exatamente como está na API
+      // Se filtros.categoria estiver vazio, não enviar o parâmetro
+      if (filtros.categoria && filtros.categoria.trim() !== '') {
+        // Reverter para o formato da API
+        let categoriaAPI = filtros.categoria;
+        
+        // Mapeamento reverso (do formato exibido para o formato da API)
+        if (categoriaAPI === 'Programação') {
+          categoriaAPI = 'Programacao'; // API usa sem acento
+        }
+        
+        params.append('categoria', categoriaAPI);
+      }
+      
+      if (filtros.nivel) {
+        params.append('nivel', filtros.nivel);
+      }
+      
+      if (filtros.preco && filtros.preco !== 'todos') {
+        if (filtros.preco === 'gratuito') {
+          params.append('gratuito', 'true');
+        } else if (filtros.preco === 'pago') {
+          params.append('gratuito', 'false');
+        }
+      }
+      
+      if (filtros.search) {
+        params.append('search', filtros.search);
+      }
+      
+      console.log('Buscando cursos com filtros:', {
         categoria: filtros.categoria,
-        nivel: filtros.nivel,
-        preco: filtros.preco !== 'todos' ? filtros.preco : '',
-        search: filtros.search
-      }).toString();
+        params: params.toString()
+      });
       
-      const response = await api.get(`/cursos?${params}`);
-      //console.log(response.data.cursos);
-      
-      setCursos(response.data.cursos);
+      const response = await api.get(`/cursos?${params.toString()}`);
+      console.log('Resposta da API:', response.data.cursos);
+      setCursos(response.data.cursos || []);
     } catch (error) {
       console.error('Erro ao carregar cursos:', error);
     } finally {
@@ -38,10 +132,55 @@ export default function CatalogoCursos() {
     }
   };
 
+  // Função para contar cursos por categoria
+  const contarCursosPorCategoria = () => {
+    const contagem = {};
+    
+    // Inicializar todas as categorias com 0
+    categorias.forEach(categoria => {
+      contagem[categoria] = 0;
+    });
+    
+    // Contar cursos
+    todosCursos.forEach(curso => {
+      if (curso.categoria) {
+        // Normalizar a categoria do curso
+        const categoriaNormalizada = normalizarCategoria(curso.categoria);
+        
+        if (categorias.includes(categoriaNormalizada)) {
+          contagem[categoriaNormalizada] = (contagem[categoriaNormalizada] || 0) + 1;
+        } else {
+          // Se não estiver na lista, contar como "Outro"
+          contagem['Outro'] = (contagem['Outro'] || 0) + 1;
+        }
+      }
+    });
+    
+    return contagem;
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
-    fetchCursos();
+    fetchCursosFiltrados();
   };
+
+  const handleClearFilters = () => {
+    setFiltros({
+      categoria: '',
+      nivel: '',
+      preco: 'todos',
+      search: ''
+    });
+  };
+
+  // Obter contagem de cursos por categoria
+  const contagemCategorias = contarCursosPorCategoria();
+  
+  // Ordenar categorias por popularidade (mais cursos primeiro)
+  const categoriasPopulares = categorias
+    .filter(categoria => contagemCategorias[categoria] > 0)
+    .sort((a, b) => contagemCategorias[b] - contagemCategorias[a])
+    .slice(0, 6); // Pegar as 6 mais populares
 
   return (
     <div className="container-fluid py-5">
@@ -87,11 +226,14 @@ export default function CatalogoCursos() {
                     onChange={(e) => setFiltros({...filtros, categoria: e.target.value})}
                   >
                     <option value="">Todas as categorias</option>
-                    <option value="programacao">Programação</option>
-                    <option value="design">Design</option>
-                    <option value="marketing">Marketing</option>
-                    <option value="negocios">Negócios</option>
-                    <option value="ti">TI e Software</option>
+                    {categorias.map((categoria, index) => (
+                      <option 
+                        key={index} 
+                        value={categoria}
+                      >
+                        {categoria} ({contagemCategorias[categoria] || 0})
+                      </option>
+                    ))}
                   </select>
                 </div>
                 
@@ -125,12 +267,7 @@ export default function CatalogoCursos() {
                 <div className="col-md-3 d-flex align-items-end">
                   <button 
                     className="btn btn-outline-secondary w-100"
-                    onClick={() => setFiltros({
-                      categoria: '',
-                      nivel: '',
-                      preco: 'todos',
-                      search: ''
-                    })}
+                    onClick={handleClearFilters}
                   >
                     Limpar Filtros
                   </button>
@@ -153,12 +290,31 @@ export default function CatalogoCursos() {
           <i className="bi bi-search text-muted" style={{ fontSize: '4rem' }}></i>
           <h3 className="mt-3">Nenhum curso encontrado</h3>
           <p className="text-muted">Tente ajustar seus filtros de busca</p>
+          <button className="btn btn-primary mt-3" onClick={handleClearFilters}>
+            Limpar Filtros
+          </button>
         </div>
       ) : (
         <>
           <div className="row mb-4">
             <div className="col-12">
               <h2>{cursos.length} cursos encontrados</h2>
+              {filtros.categoria && (
+                <p className="text-muted">
+                  Categoria: {filtros.categoria}
+                </p>
+              )}
+              {filtros.nivel && (
+                <p className="text-muted">
+                  Nível: {filtros.nivel === 'iniciante' ? 'Iniciante' : 
+                         filtros.nivel === 'intermediario' ? 'Intermediário' : 'Avançado'}
+                </p>
+              )}
+              {filtros.preco && filtros.preco !== 'todos' && (
+                <p className="text-muted">
+                  Preço: {filtros.preco === 'gratuito' ? 'Grátis' : 'Pagos'}
+                </p>
+              )}
             </div>
           </div>
           
@@ -173,6 +329,10 @@ export default function CatalogoCursos() {
                         className="card-img-top" 
                         alt={curso.titulo}
                         style={{ height: '100%', width: '100%', objectFit: 'cover' }}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/images/placeholder-curso.jpg';
+                        }}
                       />
                     </div>
                   )}
@@ -181,7 +341,15 @@ export default function CatalogoCursos() {
                       <span className={`badge bg-${curso.gratuito ? 'success' : 'warning'} me-2`}>
                         {curso.gratuito ? 'Grátis' : `MZN ${parseFloat(curso.preco).toFixed(2)}`}
                       </span>
-                      <span className="badge bg-info">{curso.nivel}</span>
+                      <span className="badge bg-info me-1">
+                        {curso.nivel === 'iniciante' ? 'Iniciante' : 
+                         curso.nivel === 'intermediario' ? 'Intermediário' : 'Avançado'}
+                      </span>
+                      {curso.categoria && (
+                        <span className="badge bg-secondary">
+                          {normalizarCategoria(curso.categoria)}
+                        </span>
+                      )}
                     </div>
                     
                     <h5 className="card-title">{curso.titulo}</h5>
@@ -226,28 +394,37 @@ export default function CatalogoCursos() {
       )}
 
       {/* Categorias Populares */}
-      <div className="row mt-5">
-        <div className="col-12">
-          <h3 className="mb-4">Categorias Populares</h3>
-          <div className="row g-3">
-            {[
-              { nome: 'Programação', cursos: 24, cor: 'primary' },
-              { nome: 'Design', cursos: 18, cor: 'success' },
-              { nome: 'Marketing', cursos: 15, cor: 'warning' },
-              { nome: 'Negócios', cursos: 12, cor: 'info' },
-              { nome: 'TI', cursos: 8, cor: 'danger' },
-              { nome: 'Data Science', cursos: 6, cor: 'secondary' }
-            ].map((cat, idx) => (
-              <div key={idx} className="col-md-4 col-lg-2">
-                <div className={`card bg-${cat.cor} bg-opacity-10 border-${cat.cor} border-2 text-center py-4`}>
-                  <h5 className="mb-2">{cat.nome}</h5>
-                  <p className="mb-0 text-muted">{cat.cursos} cursos</p>
-                </div>
-              </div>
-            ))}
+      {categoriasPopulares.length > 0 && (
+        <div className="row mt-5">
+          <div className="col-12">
+            <h3 className="mb-4">Categorias Populares</h3>
+            <div className="row g-3">
+              {categoriasPopulares.map((categoria, idx) => {
+                const cursosCount = contagemCategorias[categoria] || 0;
+                const cores = ['primary', 'success', 'warning', 'info', 'danger', 'secondary'];
+                
+                return (
+                  <div key={idx} className="col-md-4 col-lg-2">
+                    <div 
+                      className={`card bg-${cores[idx % cores.length]} bg-opacity-10 border-${cores[idx % cores.length]} border-2 text-center py-4 cursor-pointer hover-shadow`}
+                      onClick={() => setFiltros({...filtros, categoria})}
+                      style={{ 
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-5px)'}
+                      onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                    >
+                      <h5 className="mb-2">{categoria}</h5>
+                      <p className="mb-0 text-muted">{cursosCount} curso{cursosCount !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
