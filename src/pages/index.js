@@ -270,13 +270,38 @@ function SimpleCarousel({ items }) {
         
         @media (max-width: 768px) {
           .carousel-container {
-            height: 400px;
+            height: 300px;
+            border-radius: 20px;
           }
           
           .carousel-button {
-            width: 40px;
-            height: 40px;
-            font-size: 1.2rem;
+            width: 35px;
+            height: 35px;
+            font-size: 1rem;
+          }
+          
+          .carousel-button.prev {
+            left: 10px;
+          }
+          
+          .carousel-button.next {
+            right: 10px;
+          }
+        }
+        
+        @media (max-width: 480px) {
+          .carousel-container {
+            height: 250px;
+            border-radius: 15px;
+          }
+          
+          .carousel-dots {
+            bottom: 15px;
+          }
+          
+          .carousel-dot {
+            width: 8px;
+            height: 8px;
           }
         }
       `}</style>
@@ -288,7 +313,20 @@ export default function CursoOnlineJP() {
   const [isVisible, setIsVisible] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const statsRef = useRef(null);
+
+  // Detecta se é mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Copiar para área de transferência
   const copyToClipboard = (text, type) => {
@@ -375,15 +413,18 @@ export default function CursoOnlineJP() {
           color: var(--dark-color);
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
           overflow-x: hidden;
+          width: 100%;
         }
 
         .curso-online-jp {
           min-height: 100vh;
+          width: 100%;
+          overflow-x: hidden;
         }
 
         /* Classes utilitárias */
         .container {
-          width: 90%;
+          width: 100%;
           max-width: 1300px;
           margin: 0 auto;
           padding: 0 20px;
@@ -434,6 +475,7 @@ export default function CursoOnlineJP() {
           margin-bottom: 3rem;
           position: relative;
           color: var(--dark-color);
+          padding: 0 15px;
         }
 
         .section-title::after {
@@ -474,6 +516,7 @@ export default function CursoOnlineJP() {
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
           transition: all 0.3s ease;
           overflow: hidden;
+          width: 100%;
         }
 
         .card:hover {
@@ -504,17 +547,153 @@ export default function CursoOnlineJP() {
         @media (max-width: 768px) {
           .section-title {
             font-size: 2rem;
+            margin-bottom: 2rem;
           }
           
           .grid-cols-2,
           .grid-cols-3,
           .grid-cols-4 {
             grid-template-columns: 1fr;
+            gap: 1.5rem;
           }
           
           .container {
-            width: 95%;
             padding: 0 15px;
+          }
+          
+          .card {
+            margin: 0 auto;
+            max-width: 100%;
+          }
+          
+          /* Ajustes gerais para mobile */
+          h1 { font-size: 2rem !important; }
+          h2 { font-size: 1.75rem !important; }
+          h3 { font-size: 1.5rem !important; }
+          
+          p, span, div {
+            font-size: 0.95rem !important;
+            line-height: 1.5 !important;
+          }
+          
+          /* Hero Section Mobile */
+          .hero-section .container > div {
+            grid-template-columns: 1fr !important;
+            gap: 2rem !important;
+          }
+          
+          .hero-content h1 {
+            font-size: 2.5rem !important;
+          }
+          
+          .hero-content p {
+            font-size: 1.1rem !important;
+          }
+          
+          .cta-button {
+            width: 100%;
+            text-align: center;
+            padding: 15px 20px !important;
+          }
+          
+          .hero-section .container > div > div:first-child {
+            order: 2;
+          }
+          
+          .hero-section .container > div > div:last-child {
+            order: 1;
+          }
+          
+          /* Filosofia Mobile */
+          .philosophy-card {
+            padding: 1.5rem !important;
+            border-radius: 12px !important;
+          }
+          
+          .philosophy-card h3 {
+            font-size: 1.5rem !important;
+          }
+          
+          .philosophy-card p {
+            font-size: 1rem !important;
+            line-height: 1.5 !important;
+          }
+          
+          /* Stats Mobile */
+          .stats .grid-cols-4 {
+            gap: 1rem !important;
+          }
+          
+          .stats .grid-cols-4 > div {
+            padding: 1rem !important;
+          }
+          
+          .stats .grid-cols-4 > div > div {
+            font-size: 2rem !important;
+          }
+          
+          .stats .grid-cols-4 > div p {
+            font-size: 0.9rem !important;
+          }
+          
+          /* Contato Mobile */
+          .contact .grid-cols-2 {
+            grid-template-columns: 1fr !important;
+            gap: 2rem !important;
+          }
+          
+          .contact .card {
+            padding: 1.5rem !important;
+          }
+          
+          .contact h3 {
+            font-size: 1.5rem !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .hero-content h1 {
+            font-size: 2rem !important;
+          }
+          
+          .hero-content p {
+            font-size: 1rem !important;
+          }
+          
+          .hero-section .container > div {
+            gap: 1.5rem !important;
+          }
+          
+          .philosophy-card {
+            padding: 1rem !important;
+          }
+          
+          .philosophy-card h3 {
+            font-size: 1.25rem !important;
+          }
+          
+          .philosophy-card p {
+            font-size: 0.95rem !important;
+          }
+          
+          .stats .grid-cols-4 {
+            gap: 0.5rem !important;
+          }
+          
+          .stats .grid-cols-4 > div {
+            padding: 0.75rem !important;
+          }
+          
+          .stats .grid-cols-4 > div > div {
+            font-size: 1.75rem !important;
+          }
+          
+          .contact .card {
+            padding: 1rem !important;
+          }
+          
+          .contact h3 {
+            font-size: 1.25rem !important;
           }
         }
 
@@ -525,6 +704,16 @@ export default function CursoOnlineJP() {
           
           .grid-cols-3 {
             grid-template-columns: repeat(2, 1fr);
+          }
+          
+          .container {
+            padding: 0 30px;
+          }
+        }
+
+        @media (min-width: 1025px) {
+          .container {
+            padding: 0 40px;
           }
         }
 
@@ -581,7 +770,8 @@ export default function CursoOnlineJP() {
                 fontSize: '3.5rem',
                 fontWeight: '800',
                 marginBottom: '1.5rem',
-                color: 'var(--dark-color)'
+                color: 'var(--dark-color)',
+                lineHeight: '1.1'
               }}>
                 Transforme seu conhecimento em <span style={{ color: 'var(--primary-color)' }}>oportunidades</span>
               </h1>
@@ -603,7 +793,7 @@ export default function CursoOnlineJP() {
                 Ajudamos estudantes, profissionais e empreendedores a adquirir habilidades valorizadas pelo mercado com cursos práticos e atualizados.
               </p>
               
-              <div style={{ display: 'flex', gap: '1rem', marginBottom: '3rem' }}>
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '3rem', flexWrap: 'wrap' }}>
                 <a href="#cursos" className="cta-button">
                   Ver Cursos Disponíveis
                 </a>
@@ -665,7 +855,8 @@ export default function CursoOnlineJP() {
             color: 'var(--gray-color)',
             fontSize: '1.125rem',
             maxWidth: '600px',
-            margin: '0 auto 3rem'
+            margin: '0 auto 3rem',
+            padding: '0 15px'
           }}>
             Escolha entre nossos cursos mais populares e comece sua jornada de aprendizado hoje mesmo
           </p>
@@ -790,7 +981,7 @@ export default function CursoOnlineJP() {
         </div>
       </section>
 
-      {/* Filosofia: Visão, Missão, Valores */}
+      {/* Filosofia: Visão, Missão, Valores - ATUALIZADO */}
       <section className="mission-vision py-16" id="philosophy" style={{ backgroundColor: 'var(--light-color)' }}>
         <div className="container">
           <h2 className="section-title">Nossa Filosofia</h2>
@@ -799,60 +990,83 @@ export default function CursoOnlineJP() {
             {platformData.philosophy.map((item, index) => (
               <div 
                 key={item.id} 
-                className="card"
+                className="card philosophy-card"
                 style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: '1fr 1fr', 
-                  gap: '3rem', 
-                  alignItems: 'center',
-                  padding: '3rem',
-                  direction: index % 2 === 1 ? 'rtl' : 'ltr'
+                  padding: '2rem',
+                  margin: '0 auto',
+                  maxWidth: '900px'
                 }}
               >
                 <div style={{ 
-                  height: '350px',
-                  borderRadius: '12px',
-                  overflow: 'hidden'
+                  display: 'flex',
+                  flexDirection: isMobile ? 'column' : (index % 2 === 0 ? 'row' : 'row-reverse'),
+                  gap: '2rem',
+                  alignItems: 'center'
                 }}>
-                  <img 
-                    src={item.image} 
-                    alt={item.title}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      transition: 'transform 0.5s'
-                    }}
-                  />
-                </div>
-                
-                <div style={{ direction: 'ltr' }}>
-                  <div style={{ fontSize: '3rem', marginBottom: '1.5rem' }}>
-                    {item.icon}
+                  {/* Imagem - Escondida em mobile */}
+                  {!isMobile && (
+                    <div style={{ 
+                      flex: '0 0 300px',
+                      height: '300px',
+                      borderRadius: '12px',
+                      overflow: 'hidden'
+                    }}>
+                      <img 
+                        src={item.image} 
+                        alt={item.title}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover'
+                        }}
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Conteúdo */}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ 
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '1rem',
+                      marginBottom: '1.5rem'
+                    }}>
+                      <div style={{ 
+                        fontSize: '2.5rem',
+                        backgroundColor: 'var(--primary-light)',
+                        width: '60px',
+                        height: '60px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {item.icon}
+                      </div>
+                      <h3 style={{ 
+                        fontSize: '1.75rem',
+                        fontWeight: '700',
+                        color: 'var(--dark-color)',
+                        margin: 0
+                      }}>
+                        {item.title}
+                      </h3>
+                    </div>
+                    
+                    <p style={{ 
+                      color: 'var(--gray-color)',
+                      fontSize: '1.125rem',
+                      lineHeight: '1.6'
+                    }}>
+                      {item.description}
+                    </p>
                   </div>
-                  <h3 style={{ 
-                    fontSize: '2rem',
-                    fontWeight: '700',
-                    marginBottom: '1rem',
-                    color: 'var(--dark-color)'
-                  }}>
-                    {item.title}
-                  </h3>
-                  <p style={{ 
-                    color: 'var(--gray-color)',
-                    fontSize: '1.125rem',
-                    lineHeight: '1.6'
-                  }}>
-                    {item.description}
-                  </p>
                 </div>
               </div>
             ))}
           </div>
         </div>
       </section>
-
-
 
       {/* Estatísticas */}
       <section className="stats py-16" id="stats" ref={statsRef} style={{ backgroundColor: 'var(--primary-color)' }}>
@@ -904,16 +1118,20 @@ export default function CursoOnlineJP() {
                 {/* Email */}
                 <div style={{
                   display: 'flex',
-                  alignItems: 'center',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  alignItems: isMobile ? 'flex-start' : 'center',
                   padding: '1.25rem',
                   borderRadius: '12px',
                   background: 'var(--light-color)',
-                  transition: 'all 0.3s'
+                  transition: 'all 0.3s',
+                  gap: '1rem'
                 }}>
-                  <span style={{ fontSize: '1.5rem', marginRight: '1rem', color: 'var(--primary-color)' }}>✉️</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '600', color: 'var(--primary-color)', marginBottom: '0.25rem' }}>Email:</div>
-                    <div style={{ color: 'var(--gray-color)' }}>{platformData.email}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+                    <span style={{ fontSize: '1.5rem', color: 'var(--primary-color)' }}>✉️</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '600', color: 'var(--primary-color)', marginBottom: '0.25rem' }}>Email:</div>
+                      <div style={{ color: 'var(--gray-color)', wordBreak: 'break-all' }}>{platformData.email}</div>
+                    </div>
                   </div>
                   <button 
                     onClick={() => copyToClipboard(platformData.email, 'email')}
@@ -925,7 +1143,8 @@ export default function CursoOnlineJP() {
                       color: 'var(--primary-color)',
                       cursor: 'pointer',
                       fontWeight: '500',
-                      transition: 'all 0.3s'
+                      transition: 'all 0.3s',
+                      width: isMobile ? '100%' : 'auto'
                     }}
                     onMouseOver={(e) => {
                       e.target.style.background = 'var(--primary-color)';
@@ -944,16 +1163,20 @@ export default function CursoOnlineJP() {
                 {platformData.phones.map((phone, index) => (
                   <div key={index} style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    alignItems: isMobile ? 'flex-start' : 'center',
                     padding: '1.25rem',
                     borderRadius: '12px',
                     background: 'var(--light-color)',
-                    transition: 'all 0.3s'
+                    transition: 'all 0.3s',
+                    gap: '1rem'
                   }}>
-                    <span style={{ fontSize: '1.5rem', marginRight: '1rem', color: 'var(--primary-color)' }}>📞</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: '600', color: 'var(--primary-color)', marginBottom: '0.25rem' }}>Telefone {index + 1}:</div>
-                      <div style={{ color: 'var(--gray-color)' }}>{phone}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+                      <span style={{ fontSize: '1.5rem', color: 'var(--primary-color)' }}>📞</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: '600', color: 'var(--primary-color)', marginBottom: '0.25rem' }}>Telefone {index + 1}:</div>
+                        <div style={{ color: 'var(--gray-color)' }}>{phone}</div>
+                      </div>
                     </div>
                     <button 
                       onClick={() => copyToClipboard(phone.replace(/\D/g, ''), 'phone')}
@@ -965,7 +1188,8 @@ export default function CursoOnlineJP() {
                         color: 'var(--primary-color)',
                         cursor: 'pointer',
                         fontWeight: '500',
-                        transition: 'all 0.3s'
+                        transition: 'all 0.3s',
+                        width: isMobile ? '100%' : 'auto'
                       }}
                       onMouseOver={(e) => {
                         e.target.style.background = 'var(--primary-color)';
